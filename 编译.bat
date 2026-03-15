@@ -1,0 +1,1 @@
+g++ -Wall -Wextra -g3 -I./include src/*.cpp -o MCTool.exe -lws2_32 -lwininet
