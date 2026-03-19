@@ -5,7 +5,8 @@
 #include "ServerPinger.h"
 
 #define WM_UPDATE_SERVER_STATUS (WM_USER + 1)
-#define WM_UPDATE_NEWS          (WM_USER + 2)
+// 不再使用新闻更新消息
+// #define WM_UPDATE_NEWS          (WM_USER + 2)
 
 class MainWindow {
 public:
@@ -27,5 +28,5 @@ private:
     static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
     void CheckMouseEdge();
     void StartServerPingThread();
-    void StartNewsFetch();
+    // void StartNewsFetch();  // 删除
 };

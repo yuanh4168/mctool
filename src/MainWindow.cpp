@@ -1,6 +1,6 @@
 #include "MainWindow.h"
 #include "GameLauncher.h"
-#include "NewsFetcher.h"
+// #include "NewsFetcher.h"  // 不再需要
 #include <thread>
 
 MainWindow::MainWindow() : m_hWnd(NULL), m_popupVisible(false) {}
@@ -22,12 +22,6 @@ bool MainWindow::Create(HINSTANCE hInst) {
 
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(WNDCLASSEXW);
-    wc.style = CS_HREDRAW | CS_VREDRAW;
-    wc.lpfnWndProc = WndProc;
-    wc.hInstance = hInst;
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-    wc.lpszClassName = L"MainHiddenClass";
     wc.style = CS_HREDRAW | CS_VREDRAW;
     wc.lpfnWndProc = WndProc;
     wc.hInstance = hInst;
@@ -61,7 +55,7 @@ void MainWindow::CheckMouseEdge() {
     if (pt.y < m_config.edgeThreshold && !m_popupVisible) {
         m_popup.Show();
         m_popupVisible = true;
-        StartNewsFetch();
+        // 不再启动新闻获取
     } else if (pt.y > m_config.popupHeight + 20 && m_popupVisible) {
         m_popup.Hide();
         m_popupVisible = false;
@@ -80,13 +74,6 @@ void MainWindow::StartServerPingThread() {
             }
             Sleep(3000);
         }
-    }).detach();
-}
-
-void MainWindow::StartNewsFetch() {
-    std::thread([this]() {
-        std::string news = FetchNews(m_config.newsURL);
-        PostMessage(m_hWnd, WM_UPDATE_NEWS, 0, (LPARAM)new std::string(news));
     }).detach();
 }
 
@@ -116,13 +103,7 @@ LRESULT CALLBACK MainWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
                 delete pStatus;
                 break;
             }
-            case WM_UPDATE_NEWS:
-            {
-                std::string* pNews = (std::string*)lParam;
-                pThis->m_popup.UpdateNews(*pNews);
-                delete pNews;
-                break;
-            }
+            // 不再处理 WM_UPDATE_NEWS
             case WM_DESTROY:
                 PostQuitMessage(0);
                 break;

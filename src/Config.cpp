@@ -20,6 +20,16 @@ bool Config::Load(const std::string& filePath) {
         // News
         newsURL = j["news"]["url"];
 
+        // Shortcuts
+        if (j.contains("shortcuts") && j["shortcuts"].is_array()) {
+            for (const auto& item : j["shortcuts"]) {
+                Shortcut sc;
+                sc.name = item["name"];
+                sc.url  = item["url"];
+                shortcuts.push_back(sc);
+            }
+        }
+
         // UI
         edgeThreshold = j["ui"]["edge_threshold"];
         popupWidth = j["ui"]["popup_width"];

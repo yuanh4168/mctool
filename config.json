@@ -62,6 +62,24 @@
     "news": {
         "url": "https://www.minecraft.net/zh-hans/articles"
     },
+    "shortcuts": [
+        {
+            "name": "百度",
+            "url": "https://www.baidu.com"
+        },
+        {
+            "name": "GitHub",
+            "url": "https://github.com"
+        },
+        {
+            "name": "B站",
+            "url": "https://bilibili.com"
+        },
+        {
+            "name": "Minecraft官网",
+            "url": "https://www.minecraft.net"
+        }
+    ],
     "ui": {
         "edge_threshold": 10,
         "popup_width": 400,
