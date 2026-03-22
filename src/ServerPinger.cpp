@@ -11,6 +11,8 @@
 #include <sstream>
 #include <iomanip>
 #include <stack>
+#include <mutex>
+
 #pragma comment(lib, "ws2_32.lib")
 
 // 启用调试输出（0=关闭，1=打开）
@@ -26,11 +28,10 @@
 using json = nlohmann::json;
 using namespace std::chrono;
 
-// 协议常量
 const int PROTOCOL_VERSION = 772;          // 对应 C# 中的 772 (1.19.2)
-const int DEFAULT_TIMEOUT = 10000;         // 默认超时 10 秒
+const int DEFAULT_TIMEOUT = 5000;         // 默认超时 10 秒
 
-// ---------- 辅助函数：将 JSON description 转换为纯文本（模仿 C# _ConvertJNodeToMcString）----------
+// ---------- 辅助函数：将 JSON description 转换为纯文本 ----------
 static std::string ConvertJNodeToMcString(const json& node) {
     std::string result;
     std::stack<json> stack;
@@ -41,7 +42,6 @@ static std::string ConvertJNodeToMcString(const json& node) {
         stack.pop();
 
         if (current.is_object()) {
-            // 处理 extra 数组（逆序压栈保持原始顺序）
             if (current.contains("extra") && current["extra"].is_array()) {
                 const auto& extra = current["extra"];
                 for (int i = extra.size() - 1; i >= 0; --i) {
@@ -49,9 +49,7 @@ static std::string ConvertJNodeToMcString(const json& node) {
                         stack.push(extra[i]);
                 }
             }
-            // 处理 text 属性
             if (current.contains("text") && current["text"].is_string()) {
-                // 忽略颜色代码（C# 中附加了颜色格式，但我们只取纯文本）
                 result += current["text"].get<std::string>();
             }
         }
@@ -76,21 +74,14 @@ static std::string ConvertJNodeToMcString(const json& node) {
 // ---------- 构建握手包（现代协议）----------
 static std::vector<uint8_t> BuildHandshakePacket(const std::string& host, uint16_t port) {
     std::vector<uint8_t> packet;
-    // 包 ID = 0 (handshake)
     WriteVarInt(packet, 0);
-    // 协议版本（C# 中固定为 772）
     WriteVarInt(packet, PROTOCOL_VERSION);
-    // 服务器地址长度
     WriteVarInt(packet, host.size());
-    // 服务器地址
     packet.insert(packet.end(), host.begin(), host.end());
-    // 服务器端口（大端序）
     packet.push_back((port >> 8) & 0xFF);
     packet.push_back(port & 0xFF);
-    // 下一状态：1 = status
     WriteVarInt(packet, 1);
 
-    // 最终包：长度前缀 + 包内容
     std::vector<uint8_t> finalPacket;
     WriteVarInt(finalPacket, packet.size());
     finalPacket.insert(finalPacket.end(), packet.begin(), packet.end());
@@ -100,37 +91,32 @@ static std::vector<uint8_t> BuildHandshakePacket(const std::string& host, uint16
 // ---------- 构建状态请求包----------
 static std::vector<uint8_t> BuildStatusRequestPacket() {
     std::vector<uint8_t> packet;
-    // 包 ID = 0 (status request)
     WriteVarInt(packet, 0);
-    // 最终包：长度前缀 + 包内容
     std::vector<uint8_t> finalPacket;
     WriteVarInt(finalPacket, packet.size());
     finalPacket.insert(finalPacket.end(), packet.begin(), packet.end());
     return finalPacket;
 }
 
-// ---------- 现代协议探测（同步实现，对应 C# McPingService.PingAsync）----------
+// ---------- 现代协议探测 ----------
 static bool PingModern(SOCKET sock, const std::string& host, uint16_t port, ServerStatus& status, long long& latencyMs) {
     DEBUG_LOG("开始现代协议探测...");
     auto start = high_resolution_clock::now();
 
-    // 发送握手包
     auto handshake = BuildHandshakePacket(host, port);
-    if (send(sock, (char*)handshake.data(), handshake.size(), 0) != handshake.size()) {
+    if (send(sock, (char*)handshake.data(), (int)handshake.size(), 0) != (int)handshake.size()) {
         DEBUG_LOG("握手包发送失败");
         return false;
     }
     DEBUG_LOG("握手包发送成功，长度=" << handshake.size());
 
-    // 发送状态请求包
     auto request = BuildStatusRequestPacket();
-    if (send(sock, (char*)request.data(), request.size(), 0) != request.size()) {
+    if (send(sock, (char*)request.data(), (int)request.size(), 0) != (int)request.size()) {
         DEBUG_LOG("状态请求包发送失败");
         return false;
     }
     DEBUG_LOG("状态请求包发送成功，长度=" << request.size());
 
-    // 读取响应包长度（VarInt）
     int packetLen;
     if (!ReadVarInt(sock, packetLen)) {
         DEBUG_LOG("读取响应包长度失败");
@@ -138,7 +124,6 @@ static bool PingModern(SOCKET sock, const std::string& host, uint16_t port, Serv
     }
     DEBUG_LOG("响应包长度=" << packetLen);
 
-    // 读取包 ID（应为 0）
     int packetId;
     if (!ReadVarInt(sock, packetId) || packetId != 0) {
         DEBUG_LOG("读取包 ID 失败或不为 0: " << packetId);
@@ -146,7 +131,6 @@ static bool PingModern(SOCKET sock, const std::string& host, uint16_t port, Serv
     }
     DEBUG_LOG("包 ID=" << packetId);
 
-    // 读取 JSON 数据长度（VarInt）
     int jsonLen;
     if (!ReadVarInt(sock, jsonLen)) {
         DEBUG_LOG("读取 JSON 长度失败");
@@ -154,7 +138,6 @@ static bool PingModern(SOCKET sock, const std::string& host, uint16_t port, Serv
     }
     DEBUG_LOG("JSON 长度=" << jsonLen);
 
-    // 读取 JSON 数据
     std::vector<char> jsonBuf(jsonLen + 1, 0);
     int total = 0;
     while (total < jsonLen) {
@@ -178,12 +161,10 @@ static bool PingModern(SOCKET sock, const std::string& host, uint16_t port, Serv
         json j = json::parse(jsonBuf.data());
         DEBUG_LOG("原始 JSON: " << j.dump());
 
-        // 处理 description 字段（如果为对象则转换为纯文本）
         if (j.contains("description") && j["description"].is_object()) {
             j["description"] = ConvertJNodeToMcString(j["description"]);
         }
 
-        // 反序列化到 ServerStatus
         status.online = true;
         if (j.contains("version") && j["version"].is_object()) {
             status.version = j["version"]["name"].get<std::string>();
@@ -195,7 +176,6 @@ static bool PingModern(SOCKET sock, const std::string& host, uint16_t port, Serv
         if (j.contains("description")) {
             status.motd = j["description"].get<std::string>();
         }
-        // 其他字段如 favicon、modinfo 等暂时忽略（与原有 ServerStatus 兼容）
 
         DEBUG_LOG("现代协议解析成功，版本=" << status.version << " 玩家=" << status.players << "/" << status.maxPlayers);
         return true;
@@ -206,8 +186,9 @@ static bool PingModern(SOCKET sock, const std::string& host, uint16_t port, Serv
     }
 }
 
-// ---------- 旧版协议探测（对应 C# LegacyMcPingService.PingAsync，但已修正 UTF-16BE 解析）----------
+// ---------- 旧版协议探测 ----------
 static bool PingLegacy(SOCKET sock, const std::string& host, uint16_t port, ServerStatus& status) {
+    (void)host; (void)port; // 消除未使用参数警告
     DEBUG_LOG("尝试旧版协议探测...");
     uint8_t legacyReq[] = { 0xFE, 0x01 };
     if (send(sock, (char*)legacyReq, sizeof(legacyReq), 0) != sizeof(legacyReq)) {
@@ -233,7 +214,6 @@ static bool PingLegacy(SOCKET sock, const std::string& host, uint16_t port, Serv
         return false;
     }
 
-    // 将 UTF-16BE 转换为 UTF-8
     std::vector<wchar_t> wide(dataLen / 2 + 1);
     for (int i = 0; i < dataLen / 2; i++) {
         wide[i] = (buffer[3 + i * 2] << 8) | buffer[3 + i * 2 + 1];
@@ -244,7 +224,6 @@ static bool PingLegacy(SOCKET sock, const std::string& host, uint16_t port, Serv
     WideCharToMultiByte(CP_UTF8, 0, wide.data(), -1, &utf8[0], utf8Len, NULL, NULL);
     DEBUG_LOG("旧版原始 UTF8: " << utf8);
 
-    // 按两个空字符分割（对应 C# 中的 Split(["\0\0\0"])，但 C# 逻辑有误，这里采用正确方式）
     std::vector<std::string> parts;
     size_t pos = 0;
     while (pos < utf8.size()) {
@@ -255,15 +234,14 @@ static bool PingLegacy(SOCKET sock, const std::string& host, uint16_t port, Serv
     }
     DEBUG_LOG("旧版分割后字段数: " << parts.size());
 
-    // 根据 C# 代码，期望至少 6 个字段
     if (parts.size() >= 6) {
         try {
             status.online = true;
-            status.version = parts[2];          // 对应 C# 中的 retPart[2]
-            status.players = std::stoi(parts[5]); // 对应 C# 中的 retPart[5]
-            status.maxPlayers = std::stoi(parts[4]); // 对应 C# 中的 retPart[4]
-            status.motd = parts[3];              // 对应 C# 中的 retPart[3]
-            status.latency = 0;                  // 旧版无延迟
+            status.version = parts[2];
+            status.players = std::stoi(parts[5]);
+            status.maxPlayers = std::stoi(parts[4]);
+            status.motd = parts[3];
+            status.latency = 0;
             DEBUG_LOG("旧版解析成功，版本=" << status.version << " 玩家=" << status.players << "/" << status.maxPlayers);
             return true;
         }
@@ -276,24 +254,34 @@ static bool PingLegacy(SOCKET sock, const std::string& host, uint16_t port, Serv
     return false;
 }
 
-// ---------- 主函数：PingServer（对外接口）----------
+// ---------- WSA 初始化辅助类 ----------
+class WSAInitializer {
+public:
+    WSAInitializer() {
+        WSADATA wsaData;
+        if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+            DEBUG_LOG("WSAStartup failed");
+        } else {
+            DEBUG_LOG("WSAStartup succeeded");
+        }
+    }
+    ~WSAInitializer() {
+        WSACleanup();
+        DEBUG_LOG("WSACleanup called");
+    }
+};
+static WSAInitializer wsaInit;
+
+// ---------- 主函数：PingServer ----------
 bool PingServer(const std::string& host, uint16_t port, ServerStatus& status) {
     DEBUG_LOG("PingServer 开始: host=" << host << " port=" << port);
-
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        DEBUG_LOG("WSAStartup 失败");
-        return false;
-    }
 
     SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock == INVALID_SOCKET) {
         DEBUG_LOG("socket 创建失败");
-        WSACleanup();
         return false;
     }
 
-    // 设置接收超时（与 C# 的 Timeout 对应）
     int timeout = DEFAULT_TIMEOUT;
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
 
@@ -301,24 +289,20 @@ bool PingServer(const std::string& host, uint16_t port, ServerStatus& status) {
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
 
-    // 地址解析
     if (inet_pton(AF_INET, host.c_str(), &addr.sin_addr) != 1) {
         struct hostent* he = gethostbyname(host.c_str());
         if (!he) {
             DEBUG_LOG("DNS 解析失败: " << host);
             closesocket(sock);
-            WSACleanup();
             return false;
         }
         memcpy(&addr.sin_addr, he->h_addr_list[0], he->h_length);
         DEBUG_LOG("DNS 解析成功: " << inet_ntoa(addr.sin_addr));
     }
 
-    // 连接
     if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
         DEBUG_LOG("连接失败，错误码=" << WSAGetLastError());
         closesocket(sock);
-        WSACleanup();
         return false;
     }
     DEBUG_LOG("连接成功");
@@ -335,6 +319,5 @@ bool PingServer(const std::string& host, uint16_t port, ServerStatus& status) {
     }
 
     closesocket(sock);
-    WSACleanup();
     return success;
 }

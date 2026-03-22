@@ -12,8 +12,8 @@ std::wstring PopupWindow::UTF8ToWide(const std::string& utf8) {
 }
 
 PopupWindow::PopupWindow() 
-    : m_hWnd(NULL), m_hServerAddressStatic(NULL), m_hServerStatusStatic(NULL), m_hBkBrush(NULL), 
-      m_hHoverButton(NULL), m_hNormalFont(NULL), m_hBoldFont(NULL),
+    : m_hWnd(NULL), m_hServerAddressStatic(NULL), m_hServerStatusStatic(NULL),
+      m_hBkBrush(NULL), m_hHoverButton(NULL), m_hNormalFont(NULL), m_hBoldFont(NULL),
       m_hExitButton(NULL), m_hSwitchButton(NULL), m_lastX(0), m_autoHideScheduled(false) {
     for (int i = 0; i < 4; ++i) m_hShortcutButtons[i] = NULL;
 }
@@ -58,40 +58,42 @@ bool PopupWindow::Create(HWND hParent, HINSTANCE hInst, const Config& cfg) {
     lf.lfWeight = FW_BOLD;
     m_hBoldFont = CreateFontIndirectW(&lf);
 
-    // 服务器状态标题
-    CreateWindowW(L"STATIC", L"服务器状态", WS_CHILD | WS_VISIBLE,
+    // 服务器地址标签（标题）
+    CreateWindowW(L"STATIC", L"当前服务器", WS_CHILD | WS_VISIBLE,
         10, 10, 380, 20, m_hWnd, NULL, hInst, NULL);
-
-    // 新增：显示服务器地址的静态文本（独立）
-    m_hServerAddressStatic = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE,
-        10, 30, 380, 20, m_hWnd, NULL, hInst, NULL);
+    // 服务器地址内容（单行）
+    m_hServerAddressStatic = CreateWindowW(L"STATIC", L"未知", WS_CHILD | WS_VISIBLE,
+        10, 30, 380, 20, m_hWnd, (HMENU)IDC_SERVER_STATUS, hInst, NULL);
     SendMessageW(m_hServerAddressStatic, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
 
-    // 服务器状态内容（显示在线/离线详情）
+    // 服务器状态标签（标题）
+    CreateWindowW(L"STATIC", L"服务器状态", WS_CHILD | WS_VISIBLE,
+        10, 60, 380, 20, m_hWnd, NULL, hInst, NULL);
+    // 服务器状态内容（多行，高度足够）
     m_hServerStatusStatic = CreateWindowW(L"STATIC", L"未知", WS_CHILD | WS_VISIBLE,
-        10, 50, 380, 80, m_hWnd, (HMENU)IDC_SERVER_STATUS, hInst, NULL);
+        10, 80, 380, 80, m_hWnd, (HMENU)(IDC_SERVER_STATUS + 1), hInst, NULL);
     SendMessageW(m_hServerStatusStatic, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
 
-    // 快捷按钮（位置下移，因为增加了地址行）
+    // 快捷按钮（位置下移）
     int btnWidth = (cfg.popupWidth - 50) / 4;
     for (int i = 0; i < 4 && i < (int)cfg.shortcuts.size(); ++i) {
         m_hShortcutButtons[i] = CreateWindowW(
             L"BUTTON",
             UTF8ToWide(cfg.shortcuts[i].name).c_str(),
             WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-            10 + i * (btnWidth + 10), 140, btnWidth, 30,
+            10 + i * (btnWidth + 10), 170, btnWidth, 30,
             m_hWnd, (HMENU)(IDC_SHORTCUT1 + i), hInst, NULL);
         SendMessageW(m_hShortcutButtons[i], WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
     }
 
     // 启动游戏按钮
     HWND hLaunch = CreateWindowW(L"BUTTON", L"启动游戏", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-        150, 190, 100, 30, m_hWnd, (HMENU)IDC_LAUNCH_BUTTON, hInst, NULL);
+        150, 220, 100, 30, m_hWnd, (HMENU)IDC_LAUNCH_BUTTON, hInst, NULL);
     SendMessageW(hLaunch, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
 
     // 切换服务器按钮
     m_hSwitchButton = CreateWindowW(L"BUTTON", L"切换服务器", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-        260, 190, 100, 30, m_hWnd, (HMENU)IDC_SWITCH_BUTTON, hInst, NULL);
+        260, 220, 100, 30, m_hWnd, (HMENU)IDC_SWITCH_BUTTON, hInst, NULL);
     SendMessageW(m_hSwitchButton, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
 
     // X按钮
@@ -168,31 +170,25 @@ void PopupWindow::OnAutoHideTimer() {
     }
 }
 
-// 更新地址显示，状态显示为“检测中...”
+// 更新地址控件，并将状态控件设为“检测中...”
 void PopupWindow::SetCurrentServerInfo() {
-    // 更新地址控件
-    if (m_hServerAddressStatic) {
-        std::wstring addrText;
-        if (!m_config.servers.empty()) {
-            int idx = m_config.currentServer;
-            std::string addr = m_config.servers[idx].host + ":" + std::to_string(m_config.servers[idx].port);
-            addrText = UTF8ToWide(addr);
-        } else {
-            addrText = L"无服务器配置";
-        }
-        SetWindowTextW(m_hServerAddressStatic, addrText.c_str());
-        InvalidateRect(m_hServerAddressStatic, NULL, TRUE);
-        UpdateWindow(m_hServerAddressStatic);
-    }
-    // 更新状态控件为“检测中...”
-    if (m_hServerStatusStatic) {
+    if (!m_hServerAddressStatic || !m_hServerStatusStatic) return;
+    if (!m_config.servers.empty()) {
+        int idx = m_config.currentServer;
+        std::string addr = m_config.servers[idx].host + ":" + std::to_string(m_config.servers[idx].port);
+        SetWindowTextW(m_hServerAddressStatic, UTF8ToWide(addr).c_str());
         SetWindowTextW(m_hServerStatusStatic, L"检测中...");
-        InvalidateRect(m_hServerStatusStatic, NULL, TRUE);
-        UpdateWindow(m_hServerStatusStatic);
+    } else {
+        SetWindowTextW(m_hServerAddressStatic, L"无服务器配置");
+        SetWindowTextW(m_hServerStatusStatic, L"");
     }
+    InvalidateRect(m_hServerAddressStatic, NULL, TRUE);
+    InvalidateRect(m_hServerStatusStatic, NULL, TRUE);
+    UpdateWindow(m_hServerAddressStatic);
+    UpdateWindow(m_hServerStatusStatic);
 }
 
-// 更新状态控件（地址已经独立显示，此处只更新状态）
+// 更新状态控件（地址控件保持不变）
 void PopupWindow::UpdateServerStatus(const ServerStatus& status) {
     if (!m_hServerStatusStatic) return;
     std::wstring text;

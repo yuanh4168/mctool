@@ -1,6 +1,10 @@
 #include "MainWindow.h"
 #include "GameLauncher.h"
 #include <thread>
+#include <mutex>
+
+static std::mutex g_pingMutex;
+static bool g_pingInProgress = false;
 
 MainWindow::MainWindow() : m_hWnd(NULL), m_popupVisible(false) {}
 MainWindow::~MainWindow() {}
@@ -77,8 +81,19 @@ void MainWindow::CheckMouseEdge() {
 }
 
 void MainWindow::StartServerPing() {
+    // 避免并发 ping 导致资源冲突
+    std::lock_guard<std::mutex> lock(g_pingMutex);
+    if (g_pingInProgress) {
+        return; // 已经有 ping 在进行中，跳过本次
+    }
+    g_pingInProgress = true;
+
     std::thread([this]() {
-        if (m_config.servers.empty()) return;
+        if (m_config.servers.empty()) {
+            std::lock_guard<std::mutex> lock(g_pingMutex);
+            g_pingInProgress = false;
+            return;
+        }
         int idx = m_config.currentServer;
         ServerStatus status;
         if (PingServer(m_config.servers[idx].host, m_config.servers[idx].port, status)) {
@@ -87,6 +102,8 @@ void MainWindow::StartServerPing() {
             ServerStatus offline;
             PostMessage(m_hWnd, WM_UPDATE_SERVER_STATUS, 0, (LPARAM)new ServerStatus(offline));
         }
+        std::lock_guard<std::mutex> lock(g_pingMutex);
+        g_pingInProgress = false;
     }).detach();
 }
 
@@ -100,7 +117,7 @@ void MainWindow::SwitchToNextServer() {
     if (m_config.servers.empty()) return;
     m_config.currentServer = (m_config.currentServer + 1) % m_config.servers.size();
     UpdateConfigAndSave();
-    m_popup.SyncCurrentServerIndex(m_config.currentServer);   // 同步弹窗的索引
+    m_popup.SyncCurrentServerIndex(m_config.currentServer);   // 同步索引并刷新地址和状态
     StartServerPing();                // 开始异步查询
 }
 

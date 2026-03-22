@@ -22,16 +22,16 @@ public:
     void Show();
     void Hide();
     void UpdateServerStatus(const ServerStatus& status);
-    void SetCurrentServerInfo();               // 更新地址显示和状态显示为“检测中...”
-    void SyncCurrentServerIndex(int idx);      // 同步当前服务器索引并刷新显示
+    void SetCurrentServerInfo();          // 更新地址和状态为“检测中...”
+    void SyncCurrentServerIndex(int idx); // 同步索引并刷新地址
     HWND GetHWND() const { return m_hWnd; }
     int GetLastX() const { return m_lastX; }
     void SetLastX(int x) { m_lastX = x; }
 
 private:
     HWND m_hWnd;
-    HWND m_hServerAddressStatic;   // 新增：显示服务器地址的控件
-    HWND m_hServerStatusStatic;    // 原 m_hServerStatic 重命名，显示服务器状态
+    HWND m_hServerAddressStatic;          // 显示服务器地址的静态控件
+    HWND m_hServerStatusStatic;           // 显示状态的静态控件
     HWND m_hShortcutButtons[4];
     Config m_config;
     HBRUSH m_hBkBrush;

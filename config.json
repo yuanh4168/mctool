@@ -1,5 +1,5 @@
 {
-    "current_server": 0,
+    "current_server": 1,
     "news": {
         "url": "https://www.minecraft.net/zh-hans/articles"
     },
@@ -13,7 +13,7 @@
             "port": 25565
         },
         {
-            "host": "xmw11.com",
+            "host": "mcrhy.online",
             "port": 25565
         }
     ],
