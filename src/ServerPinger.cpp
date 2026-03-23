@@ -28,8 +28,8 @@
 using json = nlohmann::json;
 using namespace std::chrono;
 
-const int PROTOCOL_VERSION = 772;          // 对应 C# 中的 772 (1.19.2)
-const int DEFAULT_TIMEOUT = 5000;         // 默认超时 10 秒
+const int PROTOCOL_VERSION = 772;          // 对应 1.19.2
+const int DEFAULT_TIMEOUT = 5000;
 
 // ---------- 辅助函数：将 JSON description 转换为纯文本 ----------
 static std::string ConvertJNodeToMcString(const json& node) {
@@ -161,13 +161,23 @@ static bool PingModern(SOCKET sock, const std::string& host, uint16_t port, Serv
         json j = json::parse(jsonBuf.data());
         DEBUG_LOG("原始 JSON: " << j.dump());
 
+        // 处理 MOTD
         if (j.contains("description") && j["description"].is_object()) {
             j["description"] = ConvertJNodeToMcString(j["description"]);
         }
 
         status.online = true;
-        if (j.contains("version") && j["version"].is_object()) {
-            status.version = j["version"]["name"].get<std::string>();
+        // 提取版本信息（支持对象和字符串）
+        if (j.contains("version")) {
+            if (j["version"].is_object()) {
+                if (j["version"].contains("name")) {
+                    status.version = j["version"]["name"].get<std::string>();
+                } else {
+                    status.version = j["version"].dump();
+                }
+            } else if (j["version"].is_string()) {
+                status.version = j["version"].get<std::string>();
+            }
         }
         if (j.contains("players") && j["players"].is_object()) {
             status.players = j["players"]["online"].get<int>();
@@ -186,9 +196,9 @@ static bool PingModern(SOCKET sock, const std::string& host, uint16_t port, Serv
     }
 }
 
-// ---------- 旧版协议探测 ----------
+// ---------- 旧版协议探测（修正字段索引）----------
 static bool PingLegacy(SOCKET sock, const std::string& host, uint16_t port, ServerStatus& status) {
-    (void)host; (void)port; // 消除未使用参数警告
+    (void)host; (void)port;
     DEBUG_LOG("尝试旧版协议探测...");
     uint8_t legacyReq[] = { 0xFE, 0x01 };
     if (send(sock, (char*)legacyReq, sizeof(legacyReq), 0) != sizeof(legacyReq)) {
@@ -224,6 +234,7 @@ static bool PingLegacy(SOCKET sock, const std::string& host, uint16_t port, Serv
     WideCharToMultiByte(CP_UTF8, 0, wide.data(), -1, &utf8[0], utf8Len, NULL, NULL);
     DEBUG_LOG("旧版原始 UTF8: " << utf8);
 
+    // 分割字段，以 '\0' 为分隔符
     std::vector<std::string> parts;
     size_t pos = 0;
     while (pos < utf8.size()) {
@@ -234,13 +245,14 @@ static bool PingLegacy(SOCKET sock, const std::string& host, uint16_t port, Serv
     }
     DEBUG_LOG("旧版分割后字段数: " << parts.size());
 
-    if (parts.size() >= 6) {
+    // 标准格式: §1\0MOTD\0在线玩家数\0最大玩家数\0版本\0...
+    if (parts.size() >= 5) {
         try {
             status.online = true;
-            status.version = parts[2];
-            status.players = std::stoi(parts[5]);
-            status.maxPlayers = std::stoi(parts[4]);
-            status.motd = parts[3];
+            status.motd = parts[1];
+            status.players = std::stoi(parts[2]);
+            status.maxPlayers = std::stoi(parts[3]);
+            status.version = parts[4];
             status.latency = 0;
             DEBUG_LOG("旧版解析成功，版本=" << status.version << " 玩家=" << status.players << "/" << status.maxPlayers);
             return true;
