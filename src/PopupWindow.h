@@ -4,7 +4,6 @@
 #include <string>
 #include "Config.h"
 #include "ServerPinger.h"
-#include "ServerManageDlg.h"
 
 #define IDC_SERVER_STATUS 1001
 #define IDC_LAUNCH_BUTTON 1003
@@ -14,7 +13,7 @@
 #define IDC_SHORTCUT4     1007
 #define IDC_EXIT_BUTTON   1008
 #define IDC_SWITCH_BUTTON 1009
-#define IDC_MANAGE_BUTTON 1010
+// 移除了 IDC_MANAGE_BUTTON 的定义
 
 #define WM_UPDATE_HOVER   (WM_USER + 200)
 
@@ -36,8 +35,6 @@ public:
     static std::wstring UTF8ToWide(const std::string& utf8);
     static std::string WideToUTF8(const std::wstring& wide);
 
-    void OnManageServers();  // 打开管理对话框
-
 private:
     HWND m_hWnd;
     HWND m_hServerAddressStatic;
@@ -50,7 +47,7 @@ private:
     HFONT m_hBoldFont;
     HWND m_hExitButton;
     HWND m_hSwitchButton;
-    HWND m_hManageButton;
+    // 移除了 m_hManageButton
     int m_lastX;
     bool m_autoHideScheduled;
 
@@ -71,6 +68,4 @@ private:
     void OnAutoHideTimer();
     void AdhereToTop();
     void UpdateLastX();
-
-    static HWND s_hManageDlg;   // 管理对话框句柄（静态，全局唯一）
 };

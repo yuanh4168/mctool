@@ -1,5 +1,5 @@
 {
-    "current_server": 2,
+    "current_server": 1,
     "news": {
         "url": "https://www.minecraft.net/zh-hans/articles"
     },
@@ -19,8 +19,8 @@
     ],
     "shortcuts": [
         {
-            "name": "百度",
-            "url": "https://www.baidu.com"
+            "name": "deepseek",
+            "url": "chat.deepseek.com"
         },
         {
             "name": "GitHub",
