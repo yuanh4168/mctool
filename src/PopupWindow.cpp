@@ -100,29 +100,30 @@ bool PopupWindow::Create(HWND hParent, HINSTANCE hInst, const Config& cfg) {
 
     m_hBkBrush = CreateSolidBrush(RGB(32, 32, 32));
 
+    // 创建微软雅黑字体（普通和粗体）
     LOGFONTW lf = {0};
     lf.lfHeight = -14;
     lf.lfWeight = FW_NORMAL;
     lf.lfCharSet = DEFAULT_CHARSET;
-    wcscpy_s(lf.lfFaceName, L"Segoe UI");
+    wcscpy_s(lf.lfFaceName, L"Microsoft YaHei");
     m_hNormalFont = CreateFontIndirectW(&lf);
 
     lf.lfWeight = FW_BOLD;
     m_hBoldFont = CreateFontIndirectW(&lf);
 
-    // 标题：Current Server
-    CreateWindowW(L"STATIC", L"Current Server", WS_CHILD | WS_VISIBLE,
+    // ---------- 标题 ----------
+    CreateWindowW(L"STATIC", L"当前服务器", WS_CHILD | WS_VISIBLE,
         10, 10, 380, 20, m_hWnd, NULL, hInst, NULL);
-    m_hServerAddressStatic = CreateWindowW(L"STATIC", L"Unknown", WS_CHILD | WS_VISIBLE,
+    m_hServerAddressStatic = CreateWindowW(L"STATIC", L"未知", WS_CHILD | WS_VISIBLE,
         10, 30, 380, 20, m_hWnd, (HMENU)IDC_SERVER_STATUS, hInst, NULL);
     SendMessageW(m_hServerAddressStatic, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
 
-    // 标题：Server Status
-    CreateWindowW(L"STATIC", L"Server Status", WS_CHILD | WS_VISIBLE,
+    // ---------- 服务器状态标题 ----------
+    CreateWindowW(L"STATIC", L"服务器状态", WS_CHILD | WS_VISIBLE,
         10, 60, 380, 20, m_hWnd, NULL, hInst, NULL);
     
     // 服务器状态文字区域
-    m_hServerStatusStatic = CreateWindowW(L"STATIC", L"Checking...", WS_CHILD | WS_VISIBLE,
+    m_hServerStatusStatic = CreateWindowW(L"STATIC", L"检测中...", WS_CHILD | WS_VISIBLE,
         10, 80, 310, 90, m_hWnd, (HMENU)(IDC_SERVER_STATUS + 1), hInst, NULL);
     SendMessageW(m_hServerStatusStatic, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
 
@@ -131,12 +132,12 @@ bool PopupWindow::Create(HWND hParent, HINSTANCE hInst, const Config& cfg) {
         320, 80, 32, 32, m_hWnd, NULL, hInst, NULL);
     SendMessageW(m_hFaviconStatic, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)NULL);
 
-    // 快捷按钮（从配置读取，名称可能为中文，但这里保持原样）
+    // ---------- 快捷按钮 ----------
     int btnWidth = (cfg.popupWidth - 50) / 4;
     for (int i = 0; i < 4 && i < (int)cfg.shortcuts.size(); ++i) {
         m_hShortcutButtons[i] = CreateWindowW(
             L"BUTTON",
-            UTF8ToWide(cfg.shortcuts[i].name).c_str(),
+            UTF8ToWide(cfg.shortcuts[i].name).c_str(),   // 名称来自配置，可能为中文
             WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
             10 + i * (btnWidth + 10), 190, btnWidth, 30,
             m_hWnd, (HMENU)(IDC_SHORTCUT1 + i), hInst, NULL);
@@ -144,30 +145,35 @@ bool PopupWindow::Create(HWND hParent, HINSTANCE hInst, const Config& cfg) {
         SetWindowSubclass(m_hShortcutButtons[i], ButtonSubclassProc, 0, (DWORD_PTR)this);
     }
 
-    // Launch Game 按钮
-    HWND hLaunch = CreateWindowW(L"BUTTON", L"Launch Game", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+    // ---------- 启动游戏按钮 ----------
+    HWND hLaunch = CreateWindowW(L"BUTTON", L"启动游戏", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
         150, 230, 100, 30, m_hWnd, (HMENU)IDC_LAUNCH_BUTTON, hInst, NULL);
     SendMessageW(hLaunch, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
     SetWindowSubclass(hLaunch, ButtonSubclassProc, 0, (DWORD_PTR)this);
 
-    // Switch Server 按钮
-    m_hSwitchButton = CreateWindowW(L"BUTTON", L"Switch Server", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+    // ---------- 切换服务器按钮 ----------
+    m_hSwitchButton = CreateWindowW(L"BUTTON", L"切换服务器", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
         260, 230, 100, 30, m_hWnd, (HMENU)IDC_SWITCH_BUTTON, hInst, NULL);
     SendMessageW(m_hSwitchButton, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
     SetWindowSubclass(m_hSwitchButton, ButtonSubclassProc, 0, (DWORD_PTR)this);
 
-    // Toolbox 按钮
-    m_hToolButton = CreateWindowW(L"BUTTON", L"Toolbox", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+    // ---------- 工具箱按钮 ----------
+    m_hToolButton = CreateWindowW(L"BUTTON", L"工具箱", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
         40, 270, 100, 30, m_hWnd, (HMENU)IDC_TOOL_BUTTON, hInst, NULL);
     SendMessageW(m_hToolButton, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
     SetWindowSubclass(m_hToolButton, ButtonSubclassProc, 0, (DWORD_PTR)this);
 
-    // Exit 按钮
+    // ---------- 退出按钮 ----------
     m_hExitButton = CreateWindowW(L"BUTTON", L"×", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
         cfg.popupWidth - 30, 0, 30, 30,
         m_hWnd, (HMENU)IDC_EXIT_BUTTON, hInst, NULL);
     SendMessageW(m_hExitButton, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
     SetWindowSubclass(m_hExitButton, ButtonSubclassProc, 0, (DWORD_PTR)this);
+
+    // 为所有子控件统一设置字体（确保所有文字使用微软雅黑）
+    for (HWND hChild = GetWindow(m_hWnd, GW_CHILD); hChild; hChild = GetWindow(hChild, GW_HWNDNEXT)) {
+        SendMessage(hChild, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
+    }
 
     TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, m_hWnd, 0 };
     TrackMouseEvent(&tme);
@@ -244,9 +250,9 @@ void PopupWindow::SetCurrentServerInfo() {
         int idx = m_config.currentServer;
         std::string addr = m_config.servers[idx].host + ":" + std::to_string(m_config.servers[idx].port);
         SetWindowTextW(m_hServerAddressStatic, UTF8ToWide(addr).c_str());
-        SetWindowTextW(m_hServerStatusStatic, L"Checking...");
+        SetWindowTextW(m_hServerStatusStatic, L"检测中...");
     } else {
-        SetWindowTextW(m_hServerAddressStatic, L"No server configured");
+        SetWindowTextW(m_hServerAddressStatic, L"未配置服务器");
         SetWindowTextW(m_hServerStatusStatic, L"");
     }
     InvalidateRect(m_hServerAddressStatic, NULL, TRUE);
@@ -260,14 +266,14 @@ void PopupWindow::UpdateServerStatus(const ServerStatus& status) {
         std::wstring text;
         if (status.online) {
             wchar_t buf[2048];
-            swprintf(buf, 2048, L"Online - %s\n%d/%d Players\nVersion: %s\nLatency: %d ms",
+            swprintf(buf, 2048, L"在线 - %s\n%d/%d 玩家\n版本: %s\n延迟: %d ms",
                 UTF8ToWide(status.motd).c_str(),
                 status.players, status.maxPlayers,
                 UTF8ToWide(status.version).c_str(),
                 status.latency);
             text = buf;
             if (!status.mods.empty()) {
-                text += L"\nMods: ";
+                text += L"\n模组: ";
                 for (size_t i = 0; i < status.mods.size() && i < 3; ++i) {
                     if (i > 0) text += L", ";
                     text += UTF8ToWide(status.mods[i].modid);
@@ -275,7 +281,7 @@ void PopupWindow::UpdateServerStatus(const ServerStatus& status) {
                 if (status.mods.size() > 3) text += L" ...";
             }
         } else {
-            text = L"Offline";
+            text = L"离线";
         }
         SetWindowTextW(m_hServerStatusStatic, text.c_str());
         InvalidateRect(m_hServerStatusStatic, NULL, TRUE);

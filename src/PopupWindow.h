@@ -5,6 +5,7 @@
 #include "Config.h"
 #include "ServerPinger.h"
 
+// 控件 ID
 #define IDC_SERVER_STATUS 1001
 #define IDC_LAUNCH_BUTTON 1003
 #define IDC_SHORTCUT1     1004
@@ -13,7 +14,7 @@
 #define IDC_SHORTCUT4     1007
 #define IDC_EXIT_BUTTON   1008
 #define IDC_SWITCH_BUTTON 1009
-#define IDC_TOOL_BUTTON   1011   // 新增
+#define IDC_TOOL_BUTTON   1011
 
 #define WM_UPDATE_HOVER   (WM_USER + 200)
 
@@ -47,7 +48,7 @@ private:
     HFONT m_hBoldFont;
     HWND m_hExitButton;
     HWND m_hSwitchButton;
-    HWND m_hToolButton;          // 新增
+    HWND m_hToolButton;
     int m_lastX;
     bool m_autoHideScheduled;
 

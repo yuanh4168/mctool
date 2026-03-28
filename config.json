@@ -1,5 +1,5 @@
 {
-    "current_server": 2,
+    "current_server": 1,
     "news": {
         "url": "https://www.minecraft.net/zh-hans/articles"
     },
@@ -31,7 +31,7 @@
             "url": "https://bilibili.com"
         },
         {
-            "name": "Minecraft官网",
+            "name": "mc官网",
             "url": "https://www.minecraft.net"
         }
     ],

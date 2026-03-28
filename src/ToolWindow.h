@@ -27,8 +27,16 @@ private:
     
     std::wstring m_targetPath;   // 生成目标路径
 
+    // 深色风格相关
+    HBRUSH m_hBkBrush;
+    HFONT m_hNormalFont;
+    HFONT m_hBoldFont;
+    HWND m_hHoverButton;          // 当前悬停的按钮
+
     static LRESULT CALLBACK DlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam);
+    static LRESULT CALLBACK ButtonSubclassProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData);
     
+    void SetHoverButton(HWND hBtn);
     void OnGeneratePrompt();
     void OnExportPrompt();
     void OnSelectPath();
