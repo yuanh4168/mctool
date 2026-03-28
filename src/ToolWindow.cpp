@@ -7,6 +7,8 @@
 #include <vector>
 #include <algorithm>
 #include <filesystem>
+#include <regex>
+#include <cwctype>
 #include <nlohmann/json.hpp>
 
 #pragma comment(lib, "comctl32.lib")
@@ -38,7 +40,7 @@ ToolWindow::~ToolWindow() {
 }
 
 bool ToolWindow::Show(HWND hParent, HINSTANCE hInst) {
-    WNDCLASSEXW wc = {0};
+    WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(WNDCLASSEXW);
     wc.style = CS_HREDRAW | CS_VREDRAW;
     wc.lpfnWndProc = DlgProc;
@@ -48,7 +50,7 @@ bool ToolWindow::Show(HWND hParent, HINSTANCE hInst) {
     wc.lpszClassName = L"ToolWindowClass";
     RegisterClassExW(&wc);
 
-    // 恢复系统菜单（显示关闭按钮），但禁止调整大小和最大化
+    // 保留系统菜单（显示关闭按钮），只禁用调整大小和最大化
     m_hWnd = CreateWindowExW(0, L"ToolWindowClass", L"工具箱",
         WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX,
         CW_USEDEFAULT, CW_USEDEFAULT, DIALOG_WIDTH, DIALOG_HEIGHT,
@@ -235,7 +237,7 @@ void ToolWindow::OnExportPrompt() {
     GetWindowTextW(m_hPromptResultEdit, &wprompt[0], len + 1);
     wprompt.resize(len);
     std::string prompt = PopupWindow::WideToUTF8(wprompt);
-    OPENFILENAMEW ofn = {0};
+    OPENFILENAMEW ofn = {};
     wchar_t fileName[MAX_PATH] = L"prompt_template.md";
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = m_hWnd;
@@ -257,7 +259,7 @@ void ToolWindow::OnExportPrompt() {
 }
 
 void ToolWindow::OnSelectPath() {
-    BROWSEINFOW bi = {0};
+    BROWSEINFOW bi = {};
     bi.hwndOwner = m_hWnd;
     bi.lpszTitle = L"选择生成目录";
     bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
@@ -293,6 +295,7 @@ void ToolWindow::OnGenerateStructure() {
 }
 
 void ToolWindow::AppendLog(const std::wstring& text) {
+    // 更新日志编辑框
     int len = GetWindowTextLengthW(m_hLogEdit);
     std::wstring current(len + 1, L'\0');
     GetWindowTextW(m_hLogEdit, &current[0], len + 1);
@@ -302,79 +305,113 @@ void ToolWindow::AppendLog(const std::wstring& text) {
     SetWindowTextW(m_hLogEdit, current.c_str());
     SendMessageW(m_hLogEdit, EM_SETSEL, (WPARAM)-1, (LPARAM)-1);
     SendMessageW(m_hLogEdit, EM_SCROLLCARET, 0, 0);
+
+    // 写入日志文件（UTF-8 编码，追加模式）
+    try {
+        wchar_t modulePath[MAX_PATH];
+        GetModuleFileNameW(NULL, modulePath, MAX_PATH);
+        std::wstring exeDir = modulePath;
+        exeDir = exeDir.substr(0, exeDir.find_last_of(L"\\"));
+        std::wstring logPath = exeDir + L"\\tool_log.log";
+
+        std::string narrowPath = PopupWindow::WideToUTF8(logPath);
+        std::ofstream logFile(narrowPath, std::ios::binary | std::ios::app);
+        if (logFile) {
+            std::string utf8Text = PopupWindow::WideToUTF8(text);
+            logFile << utf8Text << std::endl;
+            logFile.close();
+        }
+    } catch (...) {
+        // 忽略文件写入错误，不影响程序运行
+    }
 }
 
 void ToolWindow::AppendLog(const std::string& text) {
     AppendLog(PopupWindow::UTF8ToWide(text));
 }
 
-// ------------------ 核心解析函数（修复版）------------------
+// ------------------ 核心解析函数（修正版）------------------
 bool ToolWindow::ParseAndGenerate(const std::string& treeText, const std::string& rootPath, std::string& log) {
     log.clear();
-    std::istringstream iss(treeText);
-    std::string line;
+
+    // 跳过 UTF-8 BOM
+    std::string text = treeText;
+    if (text.size() >= 3 && text[0] == '\xEF' && text[1] == '\xBB' && text[2] == '\xBF')
+        text = text.substr(3);
+
+    std::wstring wTreeText = PopupWindow::UTF8ToWide(text);
+    std::wistringstream iss(wTreeText);
+    std::wstring line;
 
     struct Entry {
         int level;
-        std::string name;
-        bool isDirectory;
-        std::string path;
+        std::wstring nameW;
+        bool isDir;
+        std::string fullPath;
     };
     std::vector<Entry> entries;
 
-    const std::string treeChars = "├─└ ";   // 需要移除的树状符号（不包括 │）
-    const std::string pipeChar = "│";       // 竖线，将被替换为空格
+    // 所有树状符号，将它们全部替换为空格
+    const std::wstring treeSymbols = L"│├─└─┐┌┘┼┤┴┬";
+
+    // 用于确定缩进单位（这里固定为4，因为 tree /f 每级4字符）
+    const int INDENT_UNIT = 4;
 
     while (std::getline(iss, line)) {
         if (line.empty()) continue;
+        if (!line.empty() && line.back() == L'\r') line.pop_back();
 
-        // 1. 将所有的 '│' 替换为空格，以统一缩进
-        for (size_t pos = line.find(pipeChar); pos != std::string::npos; pos = line.find(pipeChar, pos)) {
-            line[pos] = ' ';
+        // 将所有树状符号替换为空格
+        for (wchar_t ch : treeSymbols) {
+            std::replace(line.begin(), line.end(), ch, L' ');
         }
 
-        // 2. 移除其他树状符号
-        line.erase(std::remove_if(line.begin(), line.end(),
-                     [&](char c) { return treeChars.find(c) != std::string::npos; }),
-                   line.end());
-
-        // 3. 计算缩进层级（每4个空格一级）
-        int level = 0;
-        size_t pos = 0;
-        while (pos < line.size() && line[pos] == ' ') {
-            ++pos;
-            if (pos % 4 == 0) ++level;
+        // 统计前导空格数（此时所有缩进都是空格）
+        size_t leadingSpaces = 0;
+        while (leadingSpaces < line.size() && line[leadingSpaces] == L' ') {
+            ++leadingSpaces;
         }
-        // 移除前导空格
-        line = line.substr(pos);
 
-        // 4. 去除首尾多余空格
-        size_t start = line.find_first_not_of(" \t");
-        if (start == std::string::npos) continue;
-        line = line.substr(start);
-        while (!line.empty() && (line.back() == ' ' || line.back() == '\t'))
-            line.pop_back();
-        if (line.empty()) continue;
+        // 跳过全是空白的行
+        if (leadingSpaces == line.size()) continue;
 
-        std::string name = line;
+        // 计算层级：前导空格数除以缩进单位
+        int level = (int)(leadingSpaces / INDENT_UNIT);
 
-        // 5. 判断是目录还是文件
+        // 提取名称：去除前导空格后的部分
+        std::wstring nameW = line.substr(leadingSpaces);
+        // 去除首尾空白
+        nameW.erase(0, nameW.find_first_not_of(L" \t"));
+        nameW.erase(nameW.find_last_not_of(L" \t") + 1);
+        if (nameW.empty()) continue;
+
+        // 判断是目录还是文件
         bool isDir = false;
-        if (!name.empty() && name.back() == '/') {
+        if (!nameW.empty() && nameW.back() == L'/') {
             isDir = true;
-            name.pop_back();   // 移除末尾的 '/'
+            nameW.pop_back();
         } else {
-            // 包含点号且点号不在末尾 → 视为文件（有扩展名）
-            size_t dot = name.find('.');
-            if (dot != std::string::npos && dot != name.size() - 1) {
+            // 如果名称中有点号且点号不在末尾，视为文件（有扩展名）
+            size_t dot = nameW.find(L'.');
+            if (dot != std::wstring::npos && dot != nameW.size() - 1) {
                 isDir = false;
             } else {
-                // 无点号或点号在末尾 → 视为目录
                 isDir = true;
             }
         }
 
-        entries.push_back({level, name, isDir, ""});
+        // 清理名称中的非法文件名字符
+        std::wstring cleanNameW;
+        for (wchar_t c : nameW) {
+            if (iswalnum(c) || c == L'.' || c == L'_' || c == L'-' || c == L' ' || c > 0x7F) {
+                cleanNameW += c;
+            } else {
+                cleanNameW += L'_';
+            }
+        }
+        if (cleanNameW.empty()) continue;
+
+        entries.push_back({level, cleanNameW, isDir, ""});
     }
 
     if (entries.empty()) {
@@ -382,45 +419,57 @@ bool ToolWindow::ParseAndGenerate(const std::string& treeText, const std::string
         return false;
     }
 
-    std::vector<std::string> pathStack;
+    // 构建路径并创建文件/目录
+    std::vector<std::string> pathStackUTF8;
+    std::vector<std::wstring> pathStackW;
     bool allSuccess = true;
 
     for (size_t i = 0; i < entries.size(); ++i) {
         Entry& e = entries[i];
 
         // 调整栈大小
-        while ((int)pathStack.size() > e.level) pathStack.pop_back();
-
-        if (e.level == 0 && pathStack.empty()) {
-            pathStack.push_back(e.name);
-        } else {
-            // 确保当前层级正确，防止跳级
-            if ((int)pathStack.size() != e.level) {
-                log += "✗ 层级不匹配，跳过: " + e.name + "\n";
-                allSuccess = false;
-                continue;
-            }
-            pathStack.push_back(e.name);
+        while ((int)pathStackW.size() > e.level) {
+            pathStackW.pop_back();
+            pathStackUTF8.pop_back();
         }
+
+        // 检查层级连续性：如果当前层级大于栈大小，说明缺失父目录，跳过此项
+        if ((int)pathStackW.size() < e.level) {
+            std::wstring msg = L"✗ 缺失父目录，跳过: " + e.nameW + L" (层级 " + std::to_wstring(e.level) +
+                               L"，当前栈深度 " + std::to_wstring(pathStackW.size()) + L")\n";
+            log += PopupWindow::WideToUTF8(msg);
+            allSuccess = false;
+            continue;
+        }
+
+        // 添加当前项
+        pathStackW.push_back(e.nameW);
+        pathStackUTF8.push_back(PopupWindow::WideToUTF8(e.nameW));
 
         // 构建完整路径
         fs::path full = fs::path(rootPath);
-        for (const auto& seg : pathStack) {
+        for (const auto& seg : pathStackUTF8) {
             full /= seg;
         }
-        e.path = full.string();
+        e.fullPath = full.string();
 
-        if (e.isDirectory) {
+        if (e.isDir) {
             try {
-                fs::create_directories(e.path);
-                log += "✓ 创建目录: " + e.path + "\n";
+                if (fs::create_directories(e.fullPath)) {
+                    log += "✓ 创建目录: " + e.fullPath + "\n";
+                } else {
+                    log += "○ 目录已存在: " + e.fullPath + "\n";
+                }
             } catch (const std::exception& ex) {
-                log += "✗ 创建目录失败: " + e.path + " - " + ex.what() + "\n";
+                log += "✗ 创建目录失败: " + e.fullPath + " - " + ex.what() + "\n";
+                allSuccess = false;
+            } catch (...) {
+                log += "✗ 创建目录失败（未知异常）: " + e.fullPath + "\n";
                 allSuccess = false;
             }
         } else {
             // 确保父目录存在
-            fs::path parent = fs::path(e.path).parent_path();
+            fs::path parent = full.parent_path();
             if (!parent.empty() && !fs::exists(parent)) {
                 try {
                     fs::create_directories(parent);
@@ -429,22 +478,35 @@ bool ToolWindow::ParseAndGenerate(const std::string& treeText, const std::string
                     log += "✗ 创建父目录失败: " + parent.string() + " - " + ex.what() + "\n";
                     allSuccess = false;
                     continue;
+                } catch (...) {
+                    log += "✗ 创建父目录失败（未知异常）: " + parent.string() + "\n";
+                    allSuccess = false;
+                    continue;
                 }
             }
 
-            if (!fs::exists(e.path)) {
-                std::ofstream file(e.path, std::ios::binary);
-                if (file) {
-                    file.close();
-                    log += "✓ 创建文件: " + e.path + "\n";
-                } else {
-                    log += "✗ 创建文件失败: " + e.path + "\n";
+            if (!fs::exists(e.fullPath)) {
+                try {
+                    std::ofstream file(e.fullPath, std::ios::binary);
+                    if (file) {
+                        file.close();
+                        log += "✓ 创建文件: " + e.fullPath + "\n";
+                    } else {
+                        log += "✗ 创建文件失败（无法打开）: " + e.fullPath + "\n";
+                        allSuccess = false;
+                    }
+                } catch (const std::exception& ex) {
+                    log += "✗ 创建文件失败: " + e.fullPath + " - " + ex.what() + "\n";
+                    allSuccess = false;
+                } catch (...) {
+                    log += "✗ 创建文件失败（未知异常）: " + e.fullPath + "\n";
                     allSuccess = false;
                 }
             } else {
-                log += "○ 文件已存在，跳过: " + e.path + "\n";
+                log += "○ 文件已存在，跳过: " + e.fullPath + "\n";
             }
         }
     }
+
     return allSuccess;
 }
