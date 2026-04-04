@@ -1,5 +1,6 @@
 #include "ToolWindow.h"
 #include "PopupWindow.h"
+#include "DPIHelper.h"
 #include <commctrl.h>
 #include <shlobj.h>
 #include <fstream>
@@ -26,20 +27,26 @@ using json = nlohmann::json;
 #define ID_GEN_STRUCT_BTN 1007
 #define ID_LOG_EDIT       1008
 
-const int DIALOG_WIDTH = 800;
-const int DIALOG_HEIGHT = 720;
+const int BASE_DIALOG_WIDTH = 800;
+const int BASE_DIALOG_HEIGHT = 720;
 
 ToolWindow::ToolWindow() : m_hWnd(NULL),
     m_hPromptEdit(NULL), m_hGenerateBtn(NULL), m_hExportBtn(NULL), m_hPromptResultEdit(NULL),
     m_hStructureEdit(NULL), m_hSelectPathBtn(NULL), m_hGenerateStructureBtn(NULL), m_hLogEdit(NULL),
-    m_hBkBrush(NULL), m_hNormalFont(NULL), m_hBoldFont(NULL), m_hHoverButton(NULL) {
+    m_hBkBrush(NULL), m_hNormalFont(NULL), m_hBoldFont(NULL), m_hHoverButton(NULL),
+    m_hClearFont(NULL) {
 }
 
 ToolWindow::~ToolWindow() {
+    if (m_hClearFont) DeleteObject(m_hClearFont);
     if (m_hWnd) DestroyWindow(m_hWnd);
 }
 
 bool ToolWindow::Show(HWND hParent, HINSTANCE hInst) {
+    double scale = GetDPIScale();
+    int dialogWidth = (int)(BASE_DIALOG_WIDTH * scale);
+    int dialogHeight = (int)(BASE_DIALOG_HEIGHT * scale);
+
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(WNDCLASSEXW);
     wc.style = CS_HREDRAW | CS_VREDRAW;
@@ -50,10 +57,9 @@ bool ToolWindow::Show(HWND hParent, HINSTANCE hInst) {
     wc.lpszClassName = L"ToolWindowClass";
     RegisterClassExW(&wc);
 
-    // 保留系统菜单（显示关闭按钮），只禁用调整大小和最大化
     m_hWnd = CreateWindowExW(0, L"ToolWindowClass", L"工具箱",
         WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX,
-        CW_USEDEFAULT, CW_USEDEFAULT, DIALOG_WIDTH, DIALOG_HEIGHT,
+        CW_USEDEFAULT, CW_USEDEFAULT, dialogWidth, dialogHeight,
         hParent, NULL, hInst, this);
     if (!m_hWnd) return false;
 
@@ -83,60 +89,107 @@ LRESULT CALLBACK ToolWindow::DlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM 
     switch (msg) {
         case WM_CREATE: {
             HINSTANCE hInst = (HINSTANCE)GetWindowLongPtr(hDlg, GWLP_HINSTANCE);
-            HFONT hFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+            double scale = GetDPIScale();
+
+            int x10 = (int)(10 * scale);
+            int x20 = (int)(20 * scale);
+            int x30 = (int)(30 * scale);
+            int x50 = (int)(50 * scale);
+            int x140 = (int)(140 * scale);
+            int x150 = (int)(150 * scale);
+            int x170 = (int)(170 * scale);
+            int x300 = (int)(300 * scale);
+            int dialogWidth = (int)(BASE_DIALOG_WIDTH * scale);
+            int widthMinus30 = dialogWidth - (int)(30 * scale);
+            int widthMinus50 = dialogWidth - (int)(50 * scale);
+
+            int y10 = (int)(10 * scale);
+            int y20 = (int)(20 * scale);
+            int y40 = (int)(40 * scale);
+            int y65 = (int)(65 * scale);
+            int y100 = (int)(100 * scale);
+            int y180 = (int)(180 * scale);
+            int y205 = (int)(205 * scale);
+            int y305 = (int)(305 * scale);
+            int y340 = (int)(340 * scale);
+            int y370 = (int)(370 * scale);
+            int y395 = (int)(395 * scale);
+            int y505 = (int)(505 * scale);
+            int y540 = (int)(540 * scale);
+            int y565 = (int)(565 * scale);
+            int y645 = (int)(645 * scale);
+            int height20 = (int)(20 * scale);
+            int height25 = (int)(25 * scale);
+            int height70 = (int)(70 * scale);
+            int height90 = (int)(90 * scale);
+            int height100 = (int)(100 * scale);
+            int height320 = (int)(320 * scale);
+            int height350 = (int)(350 * scale);
+
+            // 创建高质量字体
+            HDC hdc = GetDC(hDlg);
+            int dpiX = GetDeviceCaps(hdc, LOGPIXELSX);
+            ReleaseDC(hDlg, hdc);
+            int fontSize = -MulDiv(12, dpiX, 96);
+            LOGFONTW lf = {0};
+            lf.lfHeight = fontSize;
+            lf.lfWeight = FW_NORMAL;
+            lf.lfQuality = CLEARTYPE_QUALITY;
+            wcscpy_s(lf.lfFaceName, L"Microsoft YaHei");
+            pThis->m_hClearFont = CreateFontIndirectW(&lf);
 
             // 第一部分：DeepSeek 提示词生成器
             CreateWindowW(L"BUTTON", L"DeepSeek 提示词生成器", 
                 WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
-                10, 10, DIALOG_WIDTH - 30, 320, hDlg, NULL, hInst, NULL);
+                x10, y10, widthMinus30, height320, hDlg, NULL, hInst, NULL);
             
             CreateWindowW(L"STATIC", L"项目描述：", WS_CHILD | WS_VISIBLE,
-                20, 40, 150, 20, hDlg, NULL, hInst, NULL);
+                x20, y40, (int)(150 * scale), height20, hDlg, NULL, hInst, NULL);
             pThis->m_hPromptEdit = CreateWindowW(L"EDIT", NULL,
                 WS_CHILD | WS_VISIBLE | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL,
-                20, 65, DIALOG_WIDTH - 50, 100, hDlg, (HMENU)ID_PROMPT_EDIT, hInst, NULL);
+                x20, y65, widthMinus50, height100, hDlg, (HMENU)ID_PROMPT_EDIT, hInst, NULL);
             
             CreateWindowW(L"STATIC", L"生成的提示词：", WS_CHILD | WS_VISIBLE,
-                20, 180, 150, 20, hDlg, NULL, hInst, NULL);
+                x20, y180, (int)(150 * scale), height20, hDlg, NULL, hInst, NULL);
             pThis->m_hPromptResultEdit = CreateWindowW(L"EDIT", NULL,
                 WS_CHILD | WS_VISIBLE | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL | ES_READONLY,
-                20, 205, DIALOG_WIDTH - 50, 90, hDlg, (HMENU)ID_PROMPT_RESULT, hInst, NULL);
+                x20, y205, widthMinus50, height90, hDlg, (HMENU)ID_PROMPT_RESULT, hInst, NULL);
             
             pThis->m_hGenerateBtn = CreateWindowW(L"BUTTON", L"生成提示词",
                 WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-                20, 305, 140, 25, hDlg, (HMENU)ID_GENERATE_BTN, hInst, NULL);
+                x20, y305, x140, height25, hDlg, (HMENU)ID_GENERATE_BTN, hInst, NULL);
             pThis->m_hExportBtn = CreateWindowW(L"BUTTON", L"导出为 Markdown",
                 WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-                170, 305, 150, 25, hDlg, (HMENU)ID_EXPORT_BTN, hInst, NULL);
+                x170, y305, x150, height25, hDlg, (HMENU)ID_EXPORT_BTN, hInst, NULL);
             
             // 第二部分：项目结构生成器
             CreateWindowW(L"BUTTON", L"项目结构生成器",
                 WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
-                10, 340, DIALOG_WIDTH - 30, 350, hDlg, NULL, hInst, NULL);
+                x10, y340, widthMinus30, height350, hDlg, NULL, hInst, NULL);
             
             CreateWindowW(L"STATIC", L"粘贴目录树（支持 tree /f 风格）：", WS_CHILD | WS_VISIBLE,
-                20, 370, 300, 20, hDlg, NULL, hInst, NULL);
+                x20, y370, x300, height20, hDlg, NULL, hInst, NULL);
             pThis->m_hStructureEdit = CreateWindowW(L"EDIT", NULL,
                 WS_CHILD | WS_VISIBLE | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL,
-                20, 395, DIALOG_WIDTH - 50, 100, hDlg, (HMENU)ID_STRUCTURE_EDIT, hInst, NULL);
+                x20, y395, widthMinus50, height100, hDlg, (HMENU)ID_STRUCTURE_EDIT, hInst, NULL);
             
             pThis->m_hSelectPathBtn = CreateWindowW(L"BUTTON", L"选择生成目录",
                 WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-                20, 505, 140, 25, hDlg, (HMENU)ID_SELECT_PATH, hInst, NULL);
+                x20, y505, x140, height25, hDlg, (HMENU)ID_SELECT_PATH, hInst, NULL);
             
             CreateWindowW(L"STATIC", L"日志：", WS_CHILD | WS_VISIBLE,
-                20, 540, 50, 20, hDlg, NULL, hInst, NULL);
+                x20, y540, (int)(50 * scale), height20, hDlg, NULL, hInst, NULL);
             pThis->m_hLogEdit = CreateWindowW(L"EDIT", NULL,
                 WS_CHILD | WS_VISIBLE | WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL | ES_READONLY,
-                20, 565, DIALOG_WIDTH - 50, 70, hDlg, (HMENU)ID_LOG_EDIT, hInst, NULL);
+                x20, y565, widthMinus50, height70, hDlg, (HMENU)ID_LOG_EDIT, hInst, NULL);
             
             pThis->m_hGenerateStructureBtn = CreateWindowW(L"BUTTON", L"生成结构",
                 WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-                20, 645, 140, 25, hDlg, (HMENU)ID_GEN_STRUCT_BTN, hInst, NULL);
+                x20, y645, x140, height25, hDlg, (HMENU)ID_GEN_STRUCT_BTN, hInst, NULL);
             
-            // 设置字体
+            // 为所有子控件设置高质量字体
             for (HWND hChild = GetWindow(hDlg, GW_CHILD); hChild; hChild = GetWindow(hChild, GW_HWNDNEXT)) {
-                SendMessage(hChild, WM_SETFONT, (WPARAM)hFont, TRUE);
+                SendMessage(hChild, WM_SETFONT, (WPARAM)pThis->m_hClearFont, TRUE);
             }
             
             wchar_t modulePath[MAX_PATH];
@@ -148,14 +201,14 @@ LRESULT CALLBACK ToolWindow::DlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM 
             return 0;
         }
         case WM_SIZE:
-            SetWindowPos(hDlg, NULL, 0, 0, DIALOG_WIDTH, DIALOG_HEIGHT, SWP_NOMOVE | SWP_NOZORDER);
             return 0;
         case WM_GETMINMAXINFO: {
             MINMAXINFO* pInfo = (MINMAXINFO*)lParam;
-            pInfo->ptMinTrackSize.x = DIALOG_WIDTH;
-            pInfo->ptMinTrackSize.y = DIALOG_HEIGHT;
-            pInfo->ptMaxTrackSize.x = DIALOG_WIDTH;
-            pInfo->ptMaxTrackSize.y = DIALOG_HEIGHT;
+            double scale = GetDPIScale();
+            pInfo->ptMinTrackSize.x = (int)(BASE_DIALOG_WIDTH * scale);
+            pInfo->ptMinTrackSize.y = (int)(BASE_DIALOG_HEIGHT * scale);
+            pInfo->ptMaxTrackSize.x = (int)(BASE_DIALOG_WIDTH * scale);
+            pInfo->ptMaxTrackSize.y = (int)(BASE_DIALOG_HEIGHT * scale);
             return 0;
         }
         case WM_COMMAND:
@@ -171,7 +224,6 @@ LRESULT CALLBACK ToolWindow::DlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM 
             DestroyWindow(hDlg);
             break;
         case WM_DESTROY:
-            // 不调用 PostQuitMessage(0)，避免退出整个程序
             break;
     }
     return DefWindowProcW(hDlg, msg, wParam, lParam);
@@ -295,7 +347,6 @@ void ToolWindow::OnGenerateStructure() {
 }
 
 void ToolWindow::AppendLog(const std::wstring& text) {
-    // 更新日志编辑框
     int len = GetWindowTextLengthW(m_hLogEdit);
     std::wstring current(len + 1, L'\0');
     GetWindowTextW(m_hLogEdit, &current[0], len + 1);
@@ -306,7 +357,6 @@ void ToolWindow::AppendLog(const std::wstring& text) {
     SendMessageW(m_hLogEdit, EM_SETSEL, (WPARAM)-1, (LPARAM)-1);
     SendMessageW(m_hLogEdit, EM_SCROLLCARET, 0, 0);
 
-    // 写入日志文件（UTF-8 编码，追加模式）
     try {
         wchar_t modulePath[MAX_PATH];
         GetModuleFileNameW(NULL, modulePath, MAX_PATH);
@@ -321,20 +371,16 @@ void ToolWindow::AppendLog(const std::wstring& text) {
             logFile << utf8Text << std::endl;
             logFile.close();
         }
-    } catch (...) {
-        // 忽略文件写入错误，不影响程序运行
-    }
+    } catch (...) {}
 }
 
 void ToolWindow::AppendLog(const std::string& text) {
     AppendLog(PopupWindow::UTF8ToWide(text));
 }
 
-// ------------------ 核心解析函数（修正版）------------------
 bool ToolWindow::ParseAndGenerate(const std::string& treeText, const std::string& rootPath, std::string& log) {
     log.clear();
 
-    // 跳过 UTF-8 BOM
     std::string text = treeText;
     if (text.size() >= 3 && text[0] == '\xEF' && text[1] == '\xBB' && text[2] == '\xBF')
         text = text.substr(3);
@@ -351,47 +397,35 @@ bool ToolWindow::ParseAndGenerate(const std::string& treeText, const std::string
     };
     std::vector<Entry> entries;
 
-    // 所有树状符号，将它们全部替换为空格
     const std::wstring treeSymbols = L"│├─└─┐┌┘┼┤┴┬";
-
-    // 用于确定缩进单位（这里固定为4，因为 tree /f 每级4字符）
     const int INDENT_UNIT = 4;
 
     while (std::getline(iss, line)) {
         if (line.empty()) continue;
         if (!line.empty() && line.back() == L'\r') line.pop_back();
 
-        // 将所有树状符号替换为空格
         for (wchar_t ch : treeSymbols) {
             std::replace(line.begin(), line.end(), ch, L' ');
         }
 
-        // 统计前导空格数（此时所有缩进都是空格）
         size_t leadingSpaces = 0;
         while (leadingSpaces < line.size() && line[leadingSpaces] == L' ') {
             ++leadingSpaces;
         }
 
-        // 跳过全是空白的行
         if (leadingSpaces == line.size()) continue;
 
-        // 计算层级：前导空格数除以缩进单位
         int level = (int)(leadingSpaces / INDENT_UNIT);
-
-        // 提取名称：去除前导空格后的部分
         std::wstring nameW = line.substr(leadingSpaces);
-        // 去除首尾空白
         nameW.erase(0, nameW.find_first_not_of(L" \t"));
         nameW.erase(nameW.find_last_not_of(L" \t") + 1);
         if (nameW.empty()) continue;
 
-        // 判断是目录还是文件
         bool isDir = false;
         if (!nameW.empty() && nameW.back() == L'/') {
             isDir = true;
             nameW.pop_back();
         } else {
-            // 如果名称中有点号且点号不在末尾，视为文件（有扩展名）
             size_t dot = nameW.find(L'.');
             if (dot != std::wstring::npos && dot != nameW.size() - 1) {
                 isDir = false;
@@ -400,7 +434,6 @@ bool ToolWindow::ParseAndGenerate(const std::string& treeText, const std::string
             }
         }
 
-        // 清理名称中的非法文件名字符
         std::wstring cleanNameW;
         for (wchar_t c : nameW) {
             if (iswalnum(c) || c == L'.' || c == L'_' || c == L'-' || c == L' ' || c > 0x7F) {
@@ -419,7 +452,6 @@ bool ToolWindow::ParseAndGenerate(const std::string& treeText, const std::string
         return false;
     }
 
-    // 构建路径并创建文件/目录
     std::vector<std::string> pathStackUTF8;
     std::vector<std::wstring> pathStackW;
     bool allSuccess = true;
@@ -427,13 +459,11 @@ bool ToolWindow::ParseAndGenerate(const std::string& treeText, const std::string
     for (size_t i = 0; i < entries.size(); ++i) {
         Entry& e = entries[i];
 
-        // 调整栈大小
         while ((int)pathStackW.size() > e.level) {
             pathStackW.pop_back();
             pathStackUTF8.pop_back();
         }
 
-        // 检查层级连续性：如果当前层级大于栈大小，说明缺失父目录，跳过此项
         if ((int)pathStackW.size() < e.level) {
             std::wstring msg = L"✗ 缺失父目录，跳过: " + e.nameW + L" (层级 " + std::to_wstring(e.level) +
                                L"，当前栈深度 " + std::to_wstring(pathStackW.size()) + L")\n";
@@ -442,11 +472,9 @@ bool ToolWindow::ParseAndGenerate(const std::string& treeText, const std::string
             continue;
         }
 
-        // 添加当前项
         pathStackW.push_back(e.nameW);
         pathStackUTF8.push_back(PopupWindow::WideToUTF8(e.nameW));
 
-        // 构建完整路径
         fs::path full = fs::path(rootPath);
         for (const auto& seg : pathStackUTF8) {
             full /= seg;
@@ -468,7 +496,6 @@ bool ToolWindow::ParseAndGenerate(const std::string& treeText, const std::string
                 allSuccess = false;
             }
         } else {
-            // 确保父目录存在
             fs::path parent = full.parent_path();
             if (!parent.empty() && !fs::exists(parent)) {
                 try {

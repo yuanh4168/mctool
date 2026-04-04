@@ -1,5 +1,6 @@
 #include "PopupWindow.h"
 #include "ToolWindow.h"
+#include "DPIHelper.h"
 #include <shellapi.h>
 #include <cstdio>
 #include <commctrl.h>
@@ -18,8 +19,7 @@ std::wstring PopupWindow::UTF8ToWide(const std::string& utf8) {
     int len = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(), NULL, 0);
     if (len == 0) return std::wstring();
     std::wstring wstr(len, L'\0');
-    int result = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(), &wstr[0], len);
-    if (result == 0) return std::wstring();
+    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(), &wstr[0], len);
     return wstr;
 }
 
@@ -28,28 +28,8 @@ std::string PopupWindow::WideToUTF8(const std::wstring& wide) {
     int len = WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), (int)wide.size(), NULL, 0, NULL, NULL);
     if (len == 0) return std::string();
     std::string utf8(len, '\0');
-    int result = WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), (int)wide.size(), &utf8[0], len, NULL, NULL);
-    if (result == 0) return std::string();
+    WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), (int)wide.size(), &utf8[0], len, NULL, NULL);
     return utf8;
-}
-
-// ---------- 构造函数 / 析构函数 ----------
-PopupWindow::PopupWindow() 
-    : m_hWnd(NULL), m_hServerAddressStatic(NULL), m_hServerStatusStatic(NULL),
-      m_hBkBrush(NULL), m_hHoverButton(NULL), m_hNormalFont(NULL), m_hBoldFont(NULL),
-      m_hExitButton(NULL), m_hSwitchButton(NULL), m_hToolButton(NULL),
-      m_lastX(0), m_autoHideScheduled(false),
-      m_hFaviconStatic(NULL), m_pFaviconBitmap(NULL), m_gdiplusToken(0) {
-    for (int i = 0; i < 4; ++i) m_hShortcutButtons[i] = NULL;
-}
-
-PopupWindow::~PopupWindow() {
-    if (m_pFaviconBitmap) delete m_pFaviconBitmap;
-    if (m_hWnd) DestroyWindow(m_hWnd);
-    if (m_hBkBrush) DeleteObject(m_hBkBrush);
-    if (m_hNormalFont) DeleteObject(m_hNormalFont);
-    if (m_hBoldFont) DeleteObject(m_hBoldFont);
-    if (m_gdiplusToken) GdiplusShutdown(m_gdiplusToken);
 }
 
 // ---------- 按钮子类化 ----------
@@ -72,9 +52,30 @@ LRESULT CALLBACK PopupWindow::ButtonSubclassProc(HWND hWnd, UINT msg, WPARAM wPa
     return DefSubclassProc(hWnd, msg, wParam, lParam);
 }
 
+// ---------- 构造函数 / 析构函数 ----------
+PopupWindow::PopupWindow() 
+    : m_hWnd(NULL), m_hServerAddressStatic(NULL), m_hServerStatusStatic(NULL),
+      m_hBkBrush(NULL), m_hHoverButton(NULL), m_hNormalFont(NULL), m_hBoldFont(NULL),
+      m_hExitButton(NULL), m_hSwitchButton(NULL), m_hToolButton(NULL),
+      m_lastX(0), m_autoHideScheduled(false),
+      m_hFaviconStatic(NULL), m_pFaviconBitmap(NULL), m_gdiplusToken(0) {
+    for (int i = 0; i < 4; ++i) m_hShortcutButtons[i] = NULL;
+}
+
+PopupWindow::~PopupWindow() {
+    if (m_pFaviconBitmap) delete m_pFaviconBitmap;
+    if (m_hWnd) DestroyWindow(m_hWnd);
+    if (m_hBkBrush) DeleteObject(m_hBkBrush);
+    if (m_hNormalFont) DeleteObject(m_hNormalFont);
+    if (m_hBoldFont) DeleteObject(m_hBoldFont);
+    if (m_gdiplusToken) GdiplusShutdown(m_gdiplusToken);
+}
+
 // ---------- 创建主弹窗 ----------
 bool PopupWindow::Create(HWND hParent, HINSTANCE hInst, const Config& cfg) {
     m_config = cfg;
+
+    double scale = GetDPIScale();
 
     WNDCLASSEXW wc = {0};
     wc.cbSize = sizeof(WNDCLASSEXW);
@@ -94,83 +95,108 @@ bool PopupWindow::Create(HWND hParent, HINSTANCE hInst, const Config& cfg) {
         hParent, NULL, hInst, this);
     if (!m_hWnd) return false;
 
-    // 初始化 GDI+
     GdiplusStartupInput gdiplusStartupInput;
     GdiplusStartup(&m_gdiplusToken, &gdiplusStartupInput, NULL);
 
     m_hBkBrush = CreateSolidBrush(RGB(32, 32, 32));
 
-    // 创建微软雅黑字体（普通和粗体）
+    // 字体（ClearType + DPI 自适应）
+    HDC hdc = GetDC(NULL);
+    int dpiX = GetDeviceCaps(hdc, LOGPIXELSX);
+    ReleaseDC(NULL, hdc);
+    int fontSize = -MulDiv(14, dpiX, 96);
     LOGFONTW lf = {0};
-    lf.lfHeight = -14;
+    lf.lfHeight = fontSize;
     lf.lfWeight = FW_NORMAL;
+    lf.lfQuality = CLEARTYPE_QUALITY;
     lf.lfCharSet = DEFAULT_CHARSET;
     wcscpy_s(lf.lfFaceName, L"Microsoft YaHei");
     m_hNormalFont = CreateFontIndirectW(&lf);
-
     lf.lfWeight = FW_BOLD;
     m_hBoldFont = CreateFontIndirectW(&lf);
 
-    // ---------- 标题 ----------
+    // 缩放后的坐标和尺寸
+    int x10 = (int)(10 * scale);
+    int x20 = (int)(20 * scale);
+    int x30 = (int)(30 * scale);
+    int x40 = (int)(40 * scale);
+    int x150 = (int)(150 * scale);
+    int x260 = (int)(260 * scale);
+    int x310 = (int)(310 * scale);
+    int x320 = (int)(320 * scale);
+    int x380 = (int)(380 * scale);
+    int width380 = (int)(380 * scale);
+    int width310 = (int)(310 * scale);
+    int width32 = (int)(32 * scale);
+    int height20 = (int)(20 * scale);
+    int height30 = (int)(30 * scale);
+    int height90 = (int)(90 * scale);
+    int y10 = (int)(10 * scale);
+    int y30 = (int)(30 * scale);
+    int y60 = (int)(60 * scale);
+    int y80 = (int)(80 * scale);
+    int y190 = (int)(190 * scale);
+    int y230 = (int)(230 * scale);
+    int y270 = (int)(270 * scale);
+
+    // 标题
     CreateWindowW(L"STATIC", L"当前服务器", WS_CHILD | WS_VISIBLE,
-        10, 10, 380, 20, m_hWnd, NULL, hInst, NULL);
+        x10, y10, width380, height20, m_hWnd, NULL, hInst, NULL);
     m_hServerAddressStatic = CreateWindowW(L"STATIC", L"未知", WS_CHILD | WS_VISIBLE,
-        10, 30, 380, 20, m_hWnd, (HMENU)IDC_SERVER_STATUS, hInst, NULL);
+        x10, y30, width380, height20, m_hWnd, (HMENU)IDC_SERVER_STATUS, hInst, NULL);
     SendMessageW(m_hServerAddressStatic, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
 
-    // ---------- 服务器状态标题 ----------
     CreateWindowW(L"STATIC", L"服务器状态", WS_CHILD | WS_VISIBLE,
-        10, 60, 380, 20, m_hWnd, NULL, hInst, NULL);
+        x10, y60, width380, height20, m_hWnd, NULL, hInst, NULL);
     
-    // 服务器状态文字区域
     m_hServerStatusStatic = CreateWindowW(L"STATIC", L"检测中...", WS_CHILD | WS_VISIBLE,
-        10, 80, 310, 90, m_hWnd, (HMENU)(IDC_SERVER_STATUS + 1), hInst, NULL);
+        x10, y80, width310, height90, m_hWnd, (HMENU)(IDC_SERVER_STATUS + 1), hInst, NULL);
     SendMessageW(m_hServerStatusStatic, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
 
-    // favicon 控件
+    // favicon
     m_hFaviconStatic = CreateWindowW(L"STATIC", NULL, WS_CHILD | WS_VISIBLE | SS_BITMAP,
-        320, 80, 32, 32, m_hWnd, NULL, hInst, NULL);
+        x320, y80, width32, width32, m_hWnd, NULL, hInst, NULL);
     SendMessageW(m_hFaviconStatic, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)NULL);
 
-    // ---------- 快捷按钮 ----------
-    int btnWidth = (cfg.popupWidth - 50) / 4;
+    // 快捷按钮
+    int btnWidth = (cfg.popupWidth - (int)(50 * scale)) / 4;
     for (int i = 0; i < 4 && i < (int)cfg.shortcuts.size(); ++i) {
         m_hShortcutButtons[i] = CreateWindowW(
             L"BUTTON",
-            UTF8ToWide(cfg.shortcuts[i].name).c_str(),   // 名称来自配置，可能为中文
+            UTF8ToWide(cfg.shortcuts[i].name).c_str(),
             WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-            10 + i * (btnWidth + 10), 190, btnWidth, 30,
+            x10 + i * (btnWidth + x10), y190, btnWidth, height30,
             m_hWnd, (HMENU)(IDC_SHORTCUT1 + i), hInst, NULL);
         SendMessageW(m_hShortcutButtons[i], WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
         SetWindowSubclass(m_hShortcutButtons[i], ButtonSubclassProc, 0, (DWORD_PTR)this);
     }
 
-    // ---------- 启动游戏按钮 ----------
+    // 启动游戏按钮
     HWND hLaunch = CreateWindowW(L"BUTTON", L"启动游戏", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-        150, 230, 100, 30, m_hWnd, (HMENU)IDC_LAUNCH_BUTTON, hInst, NULL);
+        x150, y230, (int)(100 * scale), height30, m_hWnd, (HMENU)IDC_LAUNCH_BUTTON, hInst, NULL);
     SendMessageW(hLaunch, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
     SetWindowSubclass(hLaunch, ButtonSubclassProc, 0, (DWORD_PTR)this);
 
-    // ---------- 切换服务器按钮 ----------
+    // 切换服务器按钮
     m_hSwitchButton = CreateWindowW(L"BUTTON", L"切换服务器", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-        260, 230, 100, 30, m_hWnd, (HMENU)IDC_SWITCH_BUTTON, hInst, NULL);
+        x260, y230, (int)(100 * scale), height30, m_hWnd, (HMENU)IDC_SWITCH_BUTTON, hInst, NULL);
     SendMessageW(m_hSwitchButton, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
     SetWindowSubclass(m_hSwitchButton, ButtonSubclassProc, 0, (DWORD_PTR)this);
 
-    // ---------- 工具箱按钮 ----------
+    // 工具箱按钮
     m_hToolButton = CreateWindowW(L"BUTTON", L"工具箱", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-        40, 270, 100, 30, m_hWnd, (HMENU)IDC_TOOL_BUTTON, hInst, NULL);
+        x40, y270, (int)(100 * scale), height30, m_hWnd, (HMENU)IDC_TOOL_BUTTON, hInst, NULL);
     SendMessageW(m_hToolButton, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
     SetWindowSubclass(m_hToolButton, ButtonSubclassProc, 0, (DWORD_PTR)this);
 
-    // ---------- 退出按钮 ----------
+    // 退出按钮
     m_hExitButton = CreateWindowW(L"BUTTON", L"×", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
-        cfg.popupWidth - 30, 0, 30, 30,
+        cfg.popupWidth - (int)(30 * scale), 0, (int)(30 * scale), (int)(30 * scale),
         m_hWnd, (HMENU)IDC_EXIT_BUTTON, hInst, NULL);
     SendMessageW(m_hExitButton, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
     SetWindowSubclass(m_hExitButton, ButtonSubclassProc, 0, (DWORD_PTR)this);
 
-    // 为所有子控件统一设置字体（确保所有文字使用微软雅黑）
+    // 统一字体
     for (HWND hChild = GetWindow(m_hWnd, GW_CHILD); hChild; hChild = GetWindow(hChild, GW_HWNDNEXT)) {
         SendMessage(hChild, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
     }
@@ -181,7 +207,7 @@ bool PopupWindow::Create(HWND hParent, HINSTANCE hInst, const Config& cfg) {
     return true;
 }
 
-// ---------- 显示/隐藏弹窗 ----------
+// ---------- 显示/隐藏 ----------
 void PopupWindow::Show() {
     if (IsWindowVisible(m_hWnd)) return;
     int x = (m_lastX != 0) ? m_lastX : (GetSystemMetrics(SM_CXSCREEN) - m_config.popupWidth) / 2;
@@ -315,7 +341,7 @@ void PopupWindow::SyncCurrentServerIndex(int idx) {
     }
 }
 
-// ---------- 按钮悬停判断 ----------
+// ---------- 按钮悬停 ----------
 bool PopupWindow::IsButton(HWND hWnd) {
     for (int i = 0; i < 4; ++i) {
         if (hWnd == m_hShortcutButtons[i]) return true;
@@ -388,7 +414,8 @@ LRESULT CALLBACK PopupWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
         case WM_NCHITTEST: {
             POINT pt = { LOWORD(lParam), HIWORD(lParam) };
             ScreenToClient(hWnd, &pt);
-            if (pt.y < 30) {
+            double scale = GetDPIScale();
+            if (pt.y < (int)(30 * scale)) {
                 return HTCAPTION;
             }
             break;
