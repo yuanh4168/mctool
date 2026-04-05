@@ -13,14 +13,13 @@ struct Shortcut {
     std::string url;
 };
 
-// 按钮布局配置
 struct ButtonRect {
-    std::string id;      // 按钮标识符: "launch", "switch", "tool", "exit", "shortcut1"..."shortcut4"
+    std::string id;
     int left;
     int top;
     int right;
     int bottom;
-    int radius;          // 圆角半径（像素），默认 8
+    int radius;
 };
 
 struct Config {
@@ -31,14 +30,13 @@ struct Config {
     int edgeThreshold;
     int popupWidth;
     int popupHeight;
-
-    // 新增：按钮布局列表
     std::vector<ButtonRect> buttonRects;
-
-    // 以下保留用于兼容旧版
     std::string gameCommand;
     std::vector<std::string> gameArgs;
 
     bool Load(const std::string& filePath);
     bool Save(const std::string& filePath);
+    
+    // 新增：生成默认配置的 JSON 对象
+    static nlohmann::json CreateDefaultJson();
 };

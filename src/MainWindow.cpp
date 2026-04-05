@@ -20,10 +20,7 @@ bool MainWindow::Create(HINSTANCE hInst, HICON hIcon) {
     std::string exePath(ws.begin(), ws.end());
     size_t pos = exePath.find_last_of("\\");
     std::string configPath = exePath.substr(0, pos + 1) + "config.json";
-    if (!m_config.Load(configPath)) {
-        MessageBoxA(NULL, "Failed to load config.json", "Error", MB_ICONERROR);
-        return false;
-    }
+    m_config.Load(configPath);   // 现在总是成功（可能自动生成默认配置）
 
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(WNDCLASSEXW);

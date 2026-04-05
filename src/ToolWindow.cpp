@@ -236,7 +236,7 @@ LRESULT CALLBACK ToolWindow::DlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM 
     return DefWindowProcW(hDlg, msg, wParam, lParam);
 }
 
-// ------------------ 辅助函数 ------------------
+// ---------- 修改：自动创建 prompt_template.json ----------
 std::string ToolWindow::LoadPromptTemplate() {
     wchar_t modulePath[MAX_PATH];
     GetModuleFileNameW(NULL, modulePath, MAX_PATH);
@@ -245,9 +245,20 @@ std::string ToolWindow::LoadPromptTemplate() {
     size_t pos = exePath.find_last_of("\\");
     std::string configDir = exePath.substr(0, pos + 1);
     std::string templatePath = configDir + "prompt_template.json";
+
     try {
         std::ifstream f(templatePath);
-        if (!f.is_open()) return "";
+        if (!f.is_open()) {
+            // 文件不存在，创建默认模板
+            std::ofstream ofs(templatePath);
+            if (ofs) {
+                json j;
+                j["template"] = "# DeepSeek 提示词模板\n\n## 项目描述\n{{description}}\n\n## 任务\n请根据项目描述生成详细的代码实现方案。";
+                ofs << j.dump(4);
+                ofs.close();
+            }
+            return "";  // 返回空，使用内置默认模板
+        }
         json j;
         f >> j;
         if (j.contains("template") && j["template"].is_string())
