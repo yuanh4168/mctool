@@ -1,5 +1,7 @@
 #include "MainWindow.h"
 #include "GameLauncher.h"
+#include "ReminderWindow.h"
+#include "StatsWindow.h"
 #include <thread>
 #include <mutex>
 
@@ -8,8 +10,8 @@ static bool g_pingInProgress = false;
 
 #define WM_CONFIG_UPDATED (WM_USER + 300)
 
-MainWindow::MainWindow() : m_hWnd(NULL), m_popupVisible(false) {}
-MainWindow::~MainWindow() {}
+MainWindow::MainWindow() : m_hWnd(NULL), m_popupVisible(false), m_backgroundMonitoring(false), m_hMonitorThread(NULL) {}
+MainWindow::~MainWindow() { StopBackgroundMonitoring(); }
 
 bool MainWindow::Create(HINSTANCE hInst, HICON hIcon) {
     m_hInst = hInst;
@@ -20,7 +22,7 @@ bool MainWindow::Create(HINSTANCE hInst, HICON hIcon) {
     std::string exePath(ws.begin(), ws.end());
     size_t pos = exePath.find_last_of("\\");
     std::string configPath = exePath.substr(0, pos + 1) + "config.json";
-    m_config.Load(configPath);   // 现在总是成功（可能自动生成默认配置）
+    m_config.Load(configPath);
 
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(WNDCLASSEXW);
@@ -50,6 +52,18 @@ bool MainWindow::Create(HINSTANCE hInst, HICON hIcon) {
     StartServerPing();
 
     SetTimer(m_hWnd, IDT_MOUSE_CHECK, 200, NULL);
+
+    // 启动休息提醒定时器
+    if (m_config.reminder.enabled) {
+        UINT intervalMs = m_config.reminder.intervalMinutes * 60 * 1000;
+        SetTimer(m_hWnd, IDT_REMINDER, intervalMs, NULL);
+    }
+
+    // 启动后台监控
+    if (m_config.serverMonitor.backgroundEnabled) {
+        StartBackgroundMonitoring();
+    }
+
     return true;
 }
 
@@ -116,6 +130,11 @@ void MainWindow::SwitchToNextServer() {
     UpdateConfigAndSave();
     m_popup.SyncCurrentServerIndex(m_config.currentServer);
     StartServerPing();
+    // 切换服务器时清空历史数据
+    {
+        std::lock_guard<std::mutex> lock(m_historyMutex);
+        m_latencyHistory.clear();
+    }
 }
 
 void MainWindow::UpdateConfigAndSave() {
@@ -126,6 +145,68 @@ void MainWindow::UpdateConfigAndSave() {
     size_t pos = exePath.find_last_of("\\");
     std::string configPath = exePath.substr(0, pos + 1) + "config.json";
     m_config.Save(configPath);
+}
+
+// 后台监控线程
+DWORD WINAPI MainWindow::MonitorThreadProc(LPVOID lpParam) {
+    MainWindow* pThis = (MainWindow*)lpParam;
+    Config& cfg = pThis->m_config;
+    while (pThis->m_backgroundMonitoring) {
+        int idx = cfg.currentServer;
+        if (idx >= 0 && idx < (int)cfg.servers.size()) {
+            ServerStatus status;
+            long long latency = -1;
+            bool ok = PingServer(cfg.servers[idx].host, cfg.servers[idx].port, status);
+            if (ok) latency = status.latency;
+            else latency = -1;
+            PostMessage(pThis->GetHWND(), WM_BACKGROUND_PING_RESULT, 0, (LPARAM)latency);
+        }
+        Sleep(cfg.serverMonitor.intervalSeconds * 1000);
+    }
+    return 0;
+}
+
+void MainWindow::StartBackgroundMonitoring() {
+    if (m_backgroundMonitoring) return;
+    m_backgroundMonitoring = true;
+    m_hMonitorThread = CreateThread(NULL, 0, MonitorThreadProc, this, 0, NULL);
+}
+
+void MainWindow::StopBackgroundMonitoring() {
+    if (!m_backgroundMonitoring) return;
+    m_backgroundMonitoring = false;
+    if (m_hMonitorThread) {
+        WaitForSingleObject(m_hMonitorThread, 5000);
+        CloseHandle(m_hMonitorThread);
+        m_hMonitorThread = NULL;
+    }
+}
+
+void MainWindow::AddLatencyRecord(int latency) {
+    std::lock_guard<std::mutex> lock(m_historyMutex);
+    LatencyRecord rec;
+    rec.timestamp = time(NULL);
+    rec.latency = latency;
+    m_latencyHistory.push_back(rec);
+    // 限制最大数量
+    while ((int)m_latencyHistory.size() > m_config.serverMonitor.maxDataPoints) {
+        m_latencyHistory.erase(m_latencyHistory.begin());
+    }
+}
+
+std::vector<MainWindow::LatencyRecord> MainWindow::GetLatencyHistoryCopy() const {
+    std::lock_guard<std::mutex> lock(m_historyMutex);
+    return m_latencyHistory;
+}
+
+void MainWindow::ShowStatsWindow() {
+    auto history = GetLatencyHistoryCopy();
+    if (history.empty()) {
+        MessageBoxW(m_hWnd, L"暂无延迟数据，请等待后台监控收集。", L"提示", MB_OK);
+        return;
+    }
+    StatsWindow statsWnd(m_hInst, history);
+    statsWnd.Show();
 }
 
 LRESULT CALLBACK MainWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -144,6 +225,9 @@ LRESULT CALLBACK MainWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
                     pThis->CheckMouseEdge();
                 } else if (wParam == IDT_SERVER_PING) {
                     pThis->OnPingTimer();
+                } else if (wParam == IDT_REMINDER) {
+                    ReminderWindow reminder;
+                    reminder.Show(PopupWindow::UTF8ToWide(pThis->m_config.reminder.message));
                 }
                 break;
             case WM_COMMAND:
@@ -151,6 +235,8 @@ LRESULT CALLBACK MainWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
                     LaunchGame();
                 } else if (LOWORD(wParam) == IDC_SWITCH_BUTTON) {
                     pThis->SwitchToNextServer();
+                } else if (LOWORD(wParam) == IDC_STATS_BUTTON) {
+                    pThis->ShowStatsWindow();
                 }
                 break;
             case WM_UPDATE_SERVER_STATUS:
@@ -160,11 +246,18 @@ LRESULT CALLBACK MainWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
                 delete pStatus;
                 break;
             }
+            case WM_BACKGROUND_PING_RESULT:
+            {
+                int latency = (int)lParam;
+                pThis->AddLatencyRecord(latency);
+                break;
+            }
             case WM_CONFIG_UPDATED:
                 pThis->m_popup.SetCurrentServerInfo();
                 pThis->StartServerPing();
                 break;
             case WM_DESTROY:
+                pThis->StopBackgroundMonitoring();
                 PostQuitMessage(0);
                 break;
         }

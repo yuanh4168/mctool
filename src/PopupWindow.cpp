@@ -1,5 +1,6 @@
 #include "PopupWindow.h"
 #include "ToolWindow.h"
+#include "StatsWindow.h"          // 新增
 #include "DPIHelper.h"
 #include <shellapi.h>
 #include <cstdio>
@@ -7,6 +8,7 @@
 #include <gdiplus.h>
 #include <wincrypt.h>
 #include <map>
+#include <ctime>
 
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "crypt32.lib")
@@ -14,12 +16,10 @@
 
 using namespace Gdiplus;
 
-// 辅助函数：将 COLORREF 转换为 GDI+ Color（仅用于可能的边框，但本版未使用GDI+绘制按钮）
 static Color ColorFromCOLORREF(COLORREF cr) {
     return Color(GetRValue(cr), GetGValue(cr), GetBValue(cr));
 }
 
-// ---------- 静态辅助函数 ----------
 std::wstring PopupWindow::UTF8ToWide(const std::string& utf8) {
     if (utf8.empty()) return std::wstring();
     int len = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(), NULL, 0);
@@ -38,32 +38,29 @@ std::string PopupWindow::WideToUTF8(const std::wstring& wide) {
     return utf8;
 }
 
-// ---------- 按钮子类化 ----------
 LRESULT CALLBACK PopupWindow::ButtonSubclassProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR /*uIdSubclass*/, DWORD_PTR dwRefData) {
     PopupWindow* pThis = reinterpret_cast<PopupWindow*>(dwRefData);
     if (!pThis) return DefSubclassProc(hWnd, msg, wParam, lParam);
-
     switch (msg) {
-        case WM_MOUSEMOVE: {
+        case WM_MOUSEMOVE:
             PostMessage(pThis->m_hWnd, WM_UPDATE_HOVER, (WPARAM)hWnd, 0);
-            TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, hWnd, 0 };
-            TrackMouseEvent(&tme);
+            {
+                TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, hWnd, 0 };
+                TrackMouseEvent(&tme);
+            }
             break;
-        }
-        case WM_MOUSELEAVE: {
+        case WM_MOUSELEAVE:
             PostMessage(pThis->m_hWnd, WM_UPDATE_HOVER, 0, 0);
             break;
-        }
     }
     return DefSubclassProc(hWnd, msg, wParam, lParam);
 }
 
-// ---------- 构造函数 / 析构函数 ----------
 PopupWindow::PopupWindow() 
     : m_hWnd(NULL), m_hServerAddressStatic(NULL), m_hServerStatusStatic(NULL),
       m_hBkBrush(NULL), m_hHoverButton(NULL), m_hNormalFont(NULL), m_hBoldFont(NULL),
-      m_hExitButton(NULL), m_hSwitchButton(NULL), m_hToolButton(NULL),
-      m_lastX(0), m_autoHideScheduled(false),
+      m_hExitButton(NULL), m_hSwitchButton(NULL), m_hToolButton(NULL), m_hStatsButton(NULL),
+      m_hTimeStatic(NULL), m_lastX(0), m_autoHideScheduled(false),
       m_hFaviconStatic(NULL), m_pFaviconBitmap(NULL), m_gdiplusToken(0),
       m_pGdiNormalFont(NULL), m_pGdiBoldFont(NULL) {
     for (int i = 0; i < 4; ++i) m_hShortcutButtons[i] = NULL;
@@ -80,10 +77,8 @@ PopupWindow::~PopupWindow() {
     if (m_gdiplusToken) GdiplusShutdown(m_gdiplusToken);
 }
 
-// ---------- 创建主弹窗 ----------
 bool PopupWindow::Create(HWND hParent, HINSTANCE hInst, const Config& cfg) {
     m_config = cfg;
-
     double scale = GetDPIScale();
 
     WNDCLASSEXW wc = {0};
@@ -104,13 +99,11 @@ bool PopupWindow::Create(HWND hParent, HINSTANCE hInst, const Config& cfg) {
         hParent, NULL, hInst, this);
     if (!m_hWnd) return false;
 
-    // 初始化 GDI+
     GdiplusStartupInput gdiplusStartupInput;
     GdiplusStartup(&m_gdiplusToken, &gdiplusStartupInput, NULL);
 
     m_hBkBrush = CreateSolidBrush(RGB(32, 32, 32));
 
-    // 字体（ClearType + DPI 自适应）
     HDC hdc = GetDC(NULL);
     int dpiX = GetDeviceCaps(hdc, LOGPIXELSX);
     ReleaseDC(NULL, hdc);
@@ -124,12 +117,9 @@ bool PopupWindow::Create(HWND hParent, HINSTANCE hInst, const Config& cfg) {
     m_hNormalFont = CreateFontIndirectW(&lf);
     lf.lfWeight = FW_BOLD;
     m_hBoldFont = CreateFontIndirectW(&lf);
-
-    // 创建 GDI+ 字体对象（备用，实际不使用，仅保留）
     m_pGdiNormalFont = new Font(hdc, m_hNormalFont);
     m_pGdiBoldFont   = new Font(hdc, m_hBoldFont);
 
-    // 缩放后的坐标和尺寸（标题、状态等固定控件）
     int x10 = (int)(10 * scale);
     int x40 = (int)(40 * scale);
     int x150 = (int)(150 * scale);
@@ -149,7 +139,6 @@ bool PopupWindow::Create(HWND hParent, HINSTANCE hInst, const Config& cfg) {
     int y230 = (int)(230 * scale);
     int y270 = (int)(270 * scale);
 
-    // 标题
     CreateWindowW(L"STATIC", L"当前服务器", WS_CHILD | WS_VISIBLE,
         x10, y10, width380, height20, m_hWnd, NULL, hInst, NULL);
     m_hServerAddressStatic = CreateWindowW(L"STATIC", L"未知", WS_CHILD | WS_VISIBLE,
@@ -158,17 +147,15 @@ bool PopupWindow::Create(HWND hParent, HINSTANCE hInst, const Config& cfg) {
 
     CreateWindowW(L"STATIC", L"服务器状态", WS_CHILD | WS_VISIBLE,
         x10, y60, width380, height20, m_hWnd, NULL, hInst, NULL);
-    
     m_hServerStatusStatic = CreateWindowW(L"STATIC", L"检测中...", WS_CHILD | WS_VISIBLE,
         x10, y80, width310, height90, m_hWnd, (HMENU)(IDC_SERVER_STATUS + 1), hInst, NULL);
     SendMessageW(m_hServerStatusStatic, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
 
-    // favicon
     m_hFaviconStatic = CreateWindowW(L"STATIC", NULL, WS_CHILD | WS_VISIBLE | SS_BITMAP,
         x320, y80, width32, width32, m_hWnd, NULL, hInst, NULL);
     SendMessageW(m_hFaviconStatic, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)NULL);
 
-    // ========== 根据配置创建按钮（普通矩形，无圆角）==========
+    // ========== 根据配置创建按钮 ==========
     auto getRect = [&](const std::string& id, RECT& rc) -> bool {
         for (const auto& br : m_config.buttonRects) {
             if (br.id == id) {
@@ -185,7 +172,7 @@ bool PopupWindow::Create(HWND hParent, HINSTANCE hInst, const Config& cfg) {
     // 快捷按钮
     for (int i = 0; i < 4 && i < (int)m_config.shortcuts.size(); ++i) {
         std::string id = "shortcut" + std::to_string(i + 1);
-        RECT rc = {0, 0, 0, 0};
+        RECT rc = {0,0,0,0};
         if (!getRect(id, rc)) {
             int btnWidth = (m_config.popupWidth - (int)(50 * scale)) / 4;
             rc.left = x10 + i * (btnWidth + x10);
@@ -205,7 +192,7 @@ bool PopupWindow::Create(HWND hParent, HINSTANCE hInst, const Config& cfg) {
 
     // 启动游戏按钮
     {
-        RECT rc = {0, 0, 0, 0};
+        RECT rc = {0,0,0,0};
         if (!getRect("launch", rc)) {
             rc.left = x150;
             rc.top = y230;
@@ -221,7 +208,7 @@ bool PopupWindow::Create(HWND hParent, HINSTANCE hInst, const Config& cfg) {
 
     // 切换服务器按钮
     {
-        RECT rc = {0, 0, 0, 0};
+        RECT rc = {0,0,0,0};
         if (!getRect("switch", rc)) {
             rc.left = x260;
             rc.top = y230;
@@ -237,7 +224,7 @@ bool PopupWindow::Create(HWND hParent, HINSTANCE hInst, const Config& cfg) {
 
     // 工具箱按钮
     {
-        RECT rc = {0, 0, 0, 0};
+        RECT rc = {0,0,0,0};
         if (!getRect("tool", rc)) {
             rc.left = x40;
             rc.top = y270;
@@ -253,7 +240,7 @@ bool PopupWindow::Create(HWND hParent, HINSTANCE hInst, const Config& cfg) {
 
     // 退出按钮
     {
-        RECT rc = {0, 0, 0, 0};
+        RECT rc = {0,0,0,0};
         if (!getRect("exit", rc)) {
             rc.left = m_config.popupWidth - (int)(30 * scale);
             rc.top = 0;
@@ -267,6 +254,41 @@ bool PopupWindow::Create(HWND hParent, HINSTANCE hInst, const Config& cfg) {
         SetWindowSubclass(m_hExitButton, ButtonSubclassProc, 0, (DWORD_PTR)this);
     }
 
+    // ========== 新增：统计按钮 ==========
+    {
+        RECT rc = {0,0,0,0};
+        if (!getRect("stats", rc)) {
+            // 默认放在切换服务器按钮下方或旁边，这里放在 favicon 右侧
+            rc.left = x320 + width32 + (int)(10 * scale);
+            rc.top = y80 + (int)(10 * scale);
+            rc.right = rc.left + (int)(60 * scale);
+            rc.bottom = rc.top + height30;
+        }
+        m_hStatsButton = CreateWindowW(L"BUTTON", L"统计", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+            rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top,
+            m_hWnd, (HMENU)IDC_STATS_BUTTON, hInst, NULL);
+        SendMessageW(m_hStatsButton, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
+        SetWindowSubclass(m_hStatsButton, ButtonSubclassProc, 0, (DWORD_PTR)this);
+    }
+
+    // ========== 新增：时间显示 ==========
+    if (m_config.timeDisplay.enabled) {
+        RECT rc = {0,0,0,0};
+        if (!getRect("time_display", rc)) {
+            rc.left = m_config.popupWidth - (int)(100 * scale);
+            rc.top = (int)(5 * scale);
+            rc.right = rc.left + (int)(80 * scale);
+            rc.bottom = rc.top + (int)(25 * scale);
+        }
+        m_hTimeStatic = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_CENTER,
+            rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top,
+            m_hWnd, (HMENU)IDC_TIME_STATIC, hInst, NULL);
+        SendMessageW(m_hTimeStatic, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
+        SetWindowSubclass(m_hTimeStatic, ButtonSubclassProc, 0, (DWORD_PTR)this);
+        SetTimer(m_hWnd, 101, 1000, NULL);  // 定时器 ID 101 用于刷新时间
+        UpdateTimeDisplay();
+    }
+
     // 统一字体
     for (HWND hChild = GetWindow(m_hWnd, GW_CHILD); hChild; hChild = GetWindow(hChild, GW_HWNDNEXT)) {
         SendMessage(hChild, WM_SETFONT, (WPARAM)m_hNormalFont, TRUE);
@@ -274,11 +296,23 @@ bool PopupWindow::Create(HWND hParent, HINSTANCE hInst, const Config& cfg) {
 
     TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, m_hWnd, 0 };
     TrackMouseEvent(&tme);
-
     return true;
 }
 
-// ---------- 显示/隐藏 ----------
+void PopupWindow::UpdateTimeDisplay() {
+    if (!m_hTimeStatic) return;
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    wchar_t buf[64];
+    if (m_config.timeDisplay.format == "HH:mm:ss")
+        swprintf(buf, 64, L"%02d:%02d:%02d", st.wHour, st.wMinute, st.wSecond);
+    else if (m_config.timeDisplay.format == "HH:mm")
+        swprintf(buf, 64, L"%02d:%02d", st.wHour, st.wMinute);
+    else
+        swprintf(buf, 64, L"%02d:%02d:%02d", st.wHour, st.wMinute, st.wSecond);
+    SetWindowTextW(m_hTimeStatic, buf);
+}
+
 void PopupWindow::Show() {
     if (IsWindowVisible(m_hWnd)) return;
     int x = (m_lastX != 0) ? m_lastX : (GetSystemMetrics(SM_CXSCREEN) - m_config.popupWidth) / 2;
@@ -340,7 +374,6 @@ void PopupWindow::OnAutoHideTimer() {
     }
 }
 
-// ---------- 更新服务器信息 ----------
 void PopupWindow::SetCurrentServerInfo() {
     if (!m_hServerAddressStatic || !m_hServerStatusStatic) return;
     if (!m_config.servers.empty()) {
@@ -406,13 +439,12 @@ void PopupWindow::SyncCurrentServerIndex(int idx) {
     }
 }
 
-// ---------- 按钮悬停 ----------
 bool PopupWindow::IsButton(HWND hWnd) {
     for (int i = 0; i < 4; ++i) {
         if (hWnd == m_hShortcutButtons[i]) return true;
     }
     HWND hLaunch = GetDlgItem(m_hWnd, IDC_LAUNCH_BUTTON);
-    return (hWnd == hLaunch || hWnd == m_hExitButton || hWnd == m_hSwitchButton || hWnd == m_hToolButton);
+    return (hWnd == hLaunch || hWnd == m_hExitButton || hWnd == m_hSwitchButton || hWnd == m_hToolButton || hWnd == m_hStatsButton);
 }
 
 void PopupWindow::SetHoverButton(HWND hBtn) {
@@ -423,7 +455,6 @@ void PopupWindow::SetHoverButton(HWND hBtn) {
     if (m_hHoverButton) InvalidateRect(m_hHoverButton, NULL, TRUE);
 }
 
-// ---------- GDI+ 辅助 ----------
 Gdiplus::Bitmap* PopupWindow::CreateBitmapFromData(const BYTE* data, size_t len) {
     HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE, len);
     if (!hGlobal) return NULL;
@@ -458,7 +489,6 @@ Gdiplus::Bitmap* PopupWindow::Base64ToBitmap(const std::string& base64Data) {
     return CreateBitmapFromData(decoded.data(), decodedLen);
 }
 
-// ---------- 窗口过程（普通矩形按钮，文字居中）----------
 LRESULT CALLBACK PopupWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     PopupWindow* pThis = nullptr;
     if (msg == WM_NCCREATE) {
@@ -467,7 +497,6 @@ LRESULT CALLBACK PopupWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
     } else {
         pThis = (PopupWindow*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
     }
-
     if (!pThis) return DefWindowProcW(hWnd, msg, wParam, lParam);
 
     switch (msg) {
@@ -504,6 +533,8 @@ LRESULT CALLBACK PopupWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
         case WM_TIMER:
             if (wParam == 100) {
                 pThis->OnAutoHideTimer();
+            } else if (wParam == 101) {
+                pThis->UpdateTimeDisplay();
             }
             break;
         case WM_ERASEBKGND: {
@@ -529,7 +560,6 @@ LRESULT CALLBACK PopupWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
                 bool bHover = (lpDIS->hwndItem == pThis->m_hHoverButton);
                 bool bPressed = (lpDIS->itemState & ODS_SELECTED);
 
-                // 背景颜色
                 COLORREF bgColor;
                 if (lpDIS->hwndItem == pThis->m_hExitButton) {
                     if (bPressed) bgColor = RGB(40, 20, 20);
@@ -545,12 +575,10 @@ LRESULT CALLBACK PopupWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
                 int width = rcItem.right - rcItem.left;
                 int height = rcItem.bottom - rcItem.top;
 
-                // 绘制普通矩形背景
                 HBRUSH hBgBrush = CreateSolidBrush(bgColor);
                 FillRect(hdc, &rcItem, hBgBrush);
                 DeleteObject(hBgBrush);
 
-                // 绘制边框（可选）
                 HPEN hBorderPen = CreatePen(PS_SOLID, 1, bHover ? RGB(200, 200, 200) : RGB(80, 80, 80));
                 HPEN hOldPen = (HPEN)SelectObject(hdc, hBorderPen);
                 HBRUSH hOldBrush = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
@@ -559,7 +587,6 @@ LRESULT CALLBACK PopupWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
                 SelectObject(hdc, hOldBrush);
                 DeleteObject(hBorderPen);
 
-                // 绘制文字（手动居中）
                 SetBkMode(hdc, TRANSPARENT);
                 SetTextColor(hdc, bHover ? RGB(255, 220, 100) : RGB(220, 220, 220));
                 HFONT hOldFont = (HFONT)SelectObject(hdc, bHover ? pThis->m_hBoldFont : pThis->m_hNormalFont);
@@ -568,7 +595,6 @@ LRESULT CALLBACK PopupWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
                 GetTextExtentPoint32W(hdc, text, wcslen(text), &textSize);
                 int x = rcItem.left + (width - textSize.cx) / 2;
                 int y = rcItem.top + (height - textSize.cy) / 2;
-                // 确保文字不超出按钮边界
                 if (x < rcItem.left) x = rcItem.left;
                 if (y < rcItem.top) y = rcItem.top;
                 ExtTextOutW(hdc, x, y, ETO_CLIPPED, &rcItem, text, wcslen(text), NULL);
@@ -586,7 +612,6 @@ LRESULT CALLBACK PopupWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
                     const std::string& url = pThis->m_config.shortcuts[index].url;
                     ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
                 }
-                break;
             } else if (id == IDC_LAUNCH_BUTTON) {
                 SendMessage(GetParent(hWnd), WM_COMMAND, IDC_LAUNCH_BUTTON, 0);
             } else if (id == IDC_EXIT_BUTTON) {
@@ -596,6 +621,9 @@ LRESULT CALLBACK PopupWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
             } else if (id == IDC_TOOL_BUTTON) {
                 ToolWindow toolWnd;
                 toolWnd.Show(pThis->m_hWnd, (HINSTANCE)GetWindowLongPtr(pThis->m_hWnd, GWLP_HINSTANCE));
+            } else if (id == IDC_STATS_BUTTON) {
+                // 通知父窗口（MainWindow）显示统计窗口
+                SendMessage(GetParent(hWnd), WM_COMMAND, IDC_STATS_BUTTON, 0);
             }
             break;
         }

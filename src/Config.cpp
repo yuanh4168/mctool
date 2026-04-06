@@ -25,13 +25,22 @@ nlohmann::json Config::CreateDefaultJson() {
     j["shortcuts"].push_back({{"name", "B站"}, {"url", "https://bilibili.com"}});
     j["shortcuts"].push_back({{"name", "Minecraft官网"}, {"url", "https://www.minecraft.net"}});
     
-    // UI 配置（逻辑像素，后面会根据 DPI 缩放）
+    // UI 配置
     j["ui"]["edge_threshold"] = 10;
     j["ui"]["popup_width"] = 400;
     j["ui"]["popup_height"] = 300;
     
-    // 按钮布局（可选，不配置则使用默认布局）
     j["buttons"] = nlohmann::json::array();
+    
+    // 新增默认配置
+    j["time_display"]["enabled"] = true;
+    j["time_display"]["format"] = "HH:mm:ss";
+    j["reminder"]["enabled"] = false;
+    j["reminder"]["interval_minutes"] = 15;
+    j["reminder"]["message"] = "该休息一会儿了，站起来活动一下吧";
+    j["server_monitor"]["background_enabled"] = false;
+    j["server_monitor"]["interval_seconds"] = 60;
+    j["server_monitor"]["max_data_points"] = 30;
     
     return j;
 }
@@ -42,7 +51,6 @@ bool Config::Load(const std::string& filePath) {
     
     std::ifstream f(filePath);
     if (!f.is_open()) {
-        // 文件不存在，使用默认配置
         j = CreateDefaultJson();
         needSave = true;
     } else {
@@ -67,7 +75,6 @@ bool Config::Load(const std::string& filePath) {
         }
     }
     if (servers.empty()) {
-        // 保证至少有一个服务器
         ServerInfo local;
         local.host = "localhost";
         local.port = 25565;
@@ -104,7 +111,6 @@ bool Config::Load(const std::string& filePath) {
             }
         }
     }
-    // 保证至少有一个快捷方式（否则界面可能太空）
     if (shortcuts.empty()) {
         shortcuts.push_back({"DeepSeek", "https://chat.deepseek.com"});
         needSave = true;
@@ -150,7 +156,22 @@ bool Config::Load(const std::string& filePath) {
         br.radius = (int)(br.radius * scale);
     }
     
-    // 如果需要保存（文件缺失、解析错误、或必要字段缺失），写入文件
+    // ========== 新增配置加载 ==========
+    if (j.contains("time_display") && j["time_display"].is_object()) {
+        timeDisplay.enabled = j["time_display"].value("enabled", true);
+        timeDisplay.format = j["time_display"].value("format", "HH:mm:ss");
+    }
+    if (j.contains("reminder") && j["reminder"].is_object()) {
+        reminder.enabled = j["reminder"].value("enabled", false);
+        reminder.intervalMinutes = j["reminder"].value("interval_minutes", 15);
+        reminder.message = j["reminder"].value("message", "该休息一会儿了，站起来活动一下吧");
+    }
+    if (j.contains("server_monitor") && j["server_monitor"].is_object()) {
+        serverMonitor.backgroundEnabled = j["server_monitor"].value("background_enabled", false);
+        serverMonitor.intervalSeconds = j["server_monitor"].value("interval_seconds", 60);
+        serverMonitor.maxDataPoints = j["server_monitor"].value("max_data_points", 30);
+    }
+    
     if (needSave) {
         Save(filePath);
     }
@@ -168,20 +189,18 @@ bool Config::Save(const std::string& filePath) {
     }
     j["current_server"] = currentServer;
     
-    // 读取现有文件以保留其他字段（如 ui, buttons, shortcuts 等）
     try {
         std::ifstream ifs(filePath);
         nlohmann::json full;
         if (ifs.is_open()) {
             ifs >> full;
-            // 合并：保留 full 中除 servers/current_server 外的所有字段
             for (auto it = full.begin(); it != full.end(); ++it) {
                 if (it.key() != "servers" && it.key() != "current_server") {
                     j[it.key()] = it.value();
                 }
             }
         } else {
-            // 如果是新文件，也写入 shortcuts 等默认值
+            // 默认值
             if (shortcuts.empty()) {
                 j["shortcuts"] = nlohmann::json::array();
                 j["shortcuts"].push_back({{"name", "DeepSeek"}, {"url", "https://chat.deepseek.com"}});
@@ -194,10 +213,23 @@ bool Config::Save(const std::string& filePath) {
                 j["ui"]["popup_width"] = 400;
                 j["ui"]["popup_height"] = 300;
             }
+            // 新增默认值
+            if (!j.contains("time_display")) {
+                j["time_display"]["enabled"] = true;
+                j["time_display"]["format"] = "HH:mm:ss";
+            }
+            if (!j.contains("reminder")) {
+                j["reminder"]["enabled"] = false;
+                j["reminder"]["interval_minutes"] = 15;
+                j["reminder"]["message"] = "该休息一会儿了，站起来活动一下吧";
+            }
+            if (!j.contains("server_monitor")) {
+                j["server_monitor"]["background_enabled"] = false;
+                j["server_monitor"]["interval_seconds"] = 60;
+                j["server_monitor"]["max_data_points"] = 30;
+            }
         }
-    } catch (...) {
-        // 忽略合并错误
-    }
+    } catch (...) {}
     
     std::ofstream ofs(filePath);
     if (!ofs) return false;

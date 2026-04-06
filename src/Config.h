@@ -22,6 +22,23 @@ struct ButtonRect {
     int radius;
 };
 
+struct TimeDisplay {
+    bool enabled = true;
+    std::string format = "HH:mm:ss";
+};
+
+struct Reminder {
+    bool enabled = false;
+    int intervalMinutes = 15;
+    std::string message = "该休息一会儿了，站起来活动一下吧";
+};
+
+struct ServerMonitor {
+    bool backgroundEnabled = false;
+    int intervalSeconds = 60;
+    int maxDataPoints = 30;
+};
+
 struct Config {
     std::vector<ServerInfo> servers;
     int currentServer;
@@ -34,9 +51,13 @@ struct Config {
     std::string gameCommand;
     std::vector<std::string> gameArgs;
 
+    // 新增
+    TimeDisplay timeDisplay;
+    Reminder reminder;
+    ServerMonitor serverMonitor;
+
     bool Load(const std::string& filePath);
     bool Save(const std::string& filePath);
     
-    // 新增：生成默认配置的 JSON 对象
     static nlohmann::json CreateDefaultJson();
 };

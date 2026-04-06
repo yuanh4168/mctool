@@ -16,6 +16,8 @@
 #define IDC_EXIT_BUTTON   1008
 #define IDC_SWITCH_BUTTON 1009
 #define IDC_TOOL_BUTTON   1011
+#define IDC_TIME_STATIC   1012      // 时间显示
+#define IDC_STATS_BUTTON  1013      // 统计按钮
 
 #define WM_UPDATE_HOVER   (WM_USER + 200)
 
@@ -50,6 +52,8 @@ private:
     HWND m_hExitButton;
     HWND m_hSwitchButton;
     HWND m_hToolButton;
+    HWND m_hStatsButton;          // 统计按钮
+    HWND m_hTimeStatic;           // 时间显示控件
     int m_lastX;
     bool m_autoHideScheduled;
 
@@ -57,7 +61,6 @@ private:
     Gdiplus::Bitmap* m_pFaviconBitmap;
     ULONG_PTR m_gdiplusToken;
 
-    // GDI+ 字体对象（用于绘制按钮文字）
     Gdiplus::Font* m_pGdiNormalFont;
     Gdiplus::Font* m_pGdiBoldFont;
 
@@ -76,4 +79,5 @@ private:
     void OnAutoHideTimer();
     void AdhereToTop();
     void UpdateLastX();
+    void UpdateTimeDisplay();      // 更新时间显示
 };
