@@ -127,7 +127,7 @@ bool PopupWindow::Create(HWND hParent, HINSTANCE hInst, const Config& cfg) {
     int x320 = (int)(320 * scale);
     int width380 = (int)(380 * scale);
     int width310 = (int)(310 * scale);
-    int width32 = (int)(32 * scale);
+    int width32 = (int)(64 * scale);
     int height20 = (int)(20 * scale);
     int height30 = (int)(30 * scale);
     int height90 = (int)(90 * scale);

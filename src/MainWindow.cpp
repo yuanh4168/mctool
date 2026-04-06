@@ -176,7 +176,7 @@ void MainWindow::StopBackgroundMonitoring() {
     if (!m_backgroundMonitoring) return;
     m_backgroundMonitoring = false;
     if (m_hMonitorThread) {
-        WaitForSingleObject(m_hMonitorThread, 5000);
+        // 不等待线程结束，直接关闭句柄
         CloseHandle(m_hMonitorThread);
         m_hMonitorThread = NULL;
     }
@@ -256,7 +256,9 @@ LRESULT CALLBACK MainWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM 
                 pThis->m_popup.SetCurrentServerInfo();
                 pThis->StartServerPing();
                 break;
+            // 在 WndProc 的 WM_DESTROY 中：
             case WM_DESTROY:
+                pThis->m_popup.Hide();   // 立即隐藏弹窗，避免动画延迟
                 pThis->StopBackgroundMonitoring();
                 PostQuitMessage(0);
                 break;

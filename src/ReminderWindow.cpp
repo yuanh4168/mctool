@@ -1,112 +1,60 @@
 #include "ReminderWindow.h"
-#include <gdiplus.h>
-#pragma comment(lib, "gdiplus.lib")
+#include <shellapi.h>
+#pragma comment(lib, "shell32.lib")
 
-static ULONG_PTR gdiplusToken = 0;
+static HWND g_hReminderWnd = NULL;
+static NOTIFYICONDATAW g_nid = {};
 
-ReminderWindow::ReminderWindow() : m_hWnd(NULL) {
-    if (gdiplusToken == 0) {
-        Gdiplus::GdiplusStartupInput input;
-        GdiplusStartup(&gdiplusToken, &input, NULL);
+static LRESULT CALLBACK HiddenWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+        case WM_CREATE:
+            memset(&g_nid, 0, sizeof(g_nid));
+            g_nid.cbSize = sizeof(NOTIFYICONDATAW);
+            g_nid.hWnd = hWnd;
+            g_nid.uID = 1;
+            g_nid.uFlags = NIF_INFO;
+            g_nid.dwInfoFlags = NIIF_INFO | NIIF_NOSOUND;
+            wcscpy_s(g_nid.szInfoTitle, L"MCTool 提醒");
+            Shell_NotifyIconW(NIM_ADD, &g_nid);
+            break;
+        case WM_USER_SHOW_BALLOON: {
+            const wchar_t* msgText = (const wchar_t*)lParam;
+            wcscpy_s(g_nid.szInfo, msgText);
+            Shell_NotifyIconW(NIM_MODIFY, &g_nid);
+            delete[] msgText;   // 释放内存
+            break;
+        }
+        case WM_DESTROY:
+            if (g_nid.hWnd) {
+                Shell_NotifyIconW(NIM_DELETE, &g_nid);
+                memset(&g_nid, 0, sizeof(g_nid));
+            }
+            break;
     }
+    return DefWindowProc(hWnd, msg, wParam, lParam);
 }
 
-ReminderWindow::~ReminderWindow() {
-    if (m_hWnd) DestroyWindow(m_hWnd);
-}
+ReminderWindow::ReminderWindow() {}
+ReminderWindow::~ReminderWindow() {}
 
 void ReminderWindow::Show(const std::wstring& message, int displaySeconds) {
-    m_message = message;
-    HINSTANCE hInst = GetModuleHandle(NULL);
-    WNDCLASSEXW wc = {};
-    wc.cbSize = sizeof(WNDCLASSEXW);
-    wc.style = CS_HREDRAW | CS_VREDRAW;
-    wc.lpfnWndProc = WndProc;
-    wc.hInstance = hInst;
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)GetStockObject(NULL_BRUSH);
-    wc.lpszClassName = L"ReminderWindowClass";
-    RegisterClassExW(&wc);
+    (void)displaySeconds;  // 消除未使用参数警告，如需停留时间可自行扩展
 
-    int width = 300;
-    int height = 100;
-    int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-    int screenHeight = GetSystemMetrics(SM_CYSCREEN);
-    int x = screenWidth - width - 20;
-    int y = screenHeight - height - 20;
-
-    m_hWnd = CreateWindowExW(
-        WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
-        L"ReminderWindowClass", NULL,
-        WS_POPUP,
-        x, y, width, height,
-        NULL, NULL, hInst, this);
-    if (!m_hWnd) return;
-
-    SetTimer(m_hWnd, 1, displaySeconds * 1000, NULL);
-    ShowWindow(m_hWnd, SW_SHOW);
-    AnimateWindow(m_hWnd, 200, AW_SLIDE | AW_VER_POSITIVE | AW_ACTIVATE);
-
-    MSG msg;
-    while (GetMessage(&msg, NULL, 0, 0)) {
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
-    }
-}
-
-void ReminderWindow::AnimateAndClose() {
-    if (m_hWnd && IsWindow(m_hWnd)) {
-        AnimateWindow(m_hWnd, 200, AW_SLIDE | AW_VER_NEGATIVE | AW_HIDE);
-        DestroyWindow(m_hWnd);
-        m_hWnd = NULL;
-    }
-}
-
-LRESULT CALLBACK ReminderWindow::WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    ReminderWindow* pThis = nullptr;
-    if (msg == WM_NCCREATE) {
-        pThis = (ReminderWindow*)((CREATESTRUCT*)lParam)->lpCreateParams;
-        SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)pThis);
-    } else {
-        pThis = (ReminderWindow*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
+    if (!g_hReminderWnd) {
+        HINSTANCE hInst = GetModuleHandle(NULL);
+        WNDCLASSEXW wc = {};
+        wc.cbSize = sizeof(WNDCLASSEXW);
+        wc.lpfnWndProc = HiddenWndProc;
+        wc.hInstance = hInst;
+        wc.lpszClassName = L"ReminderHiddenClass";
+        RegisterClassExW(&wc);
+        g_hReminderWnd = CreateWindowExW(0, L"ReminderHiddenClass", NULL, WS_POPUP,
+            0, 0, 0, 0, NULL, NULL, hInst, NULL);
     }
 
-    switch (msg) {
-        case WM_PAINT: {
-            PAINTSTRUCT ps;
-            HDC hdc = BeginPaint(hWnd, &ps);
-            RECT rc;
-            GetClientRect(hWnd, &rc);
-            HBRUSH bgBrush = CreateSolidBrush(RGB(32, 32, 32));
-            FillRect(hdc, &rc, bgBrush);
-            DeleteObject(bgBrush);
-            HPEN pen = CreatePen(PS_SOLID, 1, RGB(80, 80, 80));
-            HPEN oldPen = (HPEN)SelectObject(hdc, pen);
-            HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
-            Rectangle(hdc, rc.left, rc.top, rc.right, rc.bottom);
-            SelectObject(hdc, oldPen);
-            SelectObject(hdc, oldBrush);
-            DeleteObject(pen);
-            SetBkMode(hdc, TRANSPARENT);
-            SetTextColor(hdc, RGB(255, 255, 255));
-            HFONT hFont = CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Microsoft YaHei");
-            HFONT oldFont = (HFONT)SelectObject(hdc, hFont);
-            if (pThis) {
-                DrawTextW(hdc, pThis->m_message.c_str(), -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-            }
-            SelectObject(hdc, oldFont);
-            DeleteObject(hFont);
-            EndPaint(hWnd, &ps);
-            return 0;
-        }
-        case WM_TIMER:
-            if (pThis) pThis->AnimateAndClose();
-            return 0;
-        case WM_CLOSE:
-            if (pThis) pThis->AnimateAndClose();
-            return 0;
+    if (g_hReminderWnd) {
+        wchar_t* msgCopy = new wchar_t[message.length() + 1];
+        wcscpy(msgCopy, message.c_str());
+        PostMessage(g_hReminderWnd, WM_USER_SHOW_BALLOON, 0, (LPARAM)msgCopy);
     }
-    return DefWindowProcW(hWnd, msg, wParam, lParam);
 }

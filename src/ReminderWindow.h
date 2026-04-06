@@ -2,14 +2,11 @@
 #include <windows.h>
 #include <string>
 
+#define WM_USER_SHOW_BALLOON (WM_USER + 100)
+
 class ReminderWindow {
 public:
     ReminderWindow();
     ~ReminderWindow();
     void Show(const std::wstring& message, int displaySeconds = 5);
-private:
-    HWND m_hWnd;
-    std::wstring m_message;
-    static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-    void AnimateAndClose();
 };
