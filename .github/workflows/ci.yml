@@ -25,10 +25,10 @@ jobs:
           msystem: UCRT64
           update: true
           install: >-
+            mingw-w64-ucrt-x86_64-binutils
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-make
             mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-windres
             make
             git
             zip
@@ -37,12 +37,22 @@ jobs:
         shell: msys2 {0}
         run: |
           cd "$GITHUB_WORKSPACE"
-          windres resource.rc -O coff -o resource.res
-          g++ -std=c++17 -Wall -Wextra -g3 -Iinclude -I. src/*.cpp resource.res -o YMC-toolkit.exe -lws2_32 -lwininet -lgdi32 -lcomctl32 -lgdiplus -lcrypt32 -lole32 -lstdc++fs -mwindows
+          
+          # 如果存在 resource.rc 则编译，否则跳过
+          if [ -f resource.rc ]; then
+            windres resource.rc -O coff -o resource.res
+          else
+            touch resource.res
+          fi
+          
+          g++ -std=c++17 -Wall -Wextra -g3 -Iinclude -I. src/*.cpp resource.res -o YMC-toolkit.exe \
+            -lws2_32 -lwininet -lgdi32 -lcomctl32 -lgdiplus -lcrypt32 -lole32 -mwindows
+          
           if [ ! -f YMC-toolkit.exe ]; then
             echo "Build failed: YMC-toolkit.exe not found"
             exit 1
           fi
+          
           echo "Build succeeded."
 
       - name: Prepare release artifacts
@@ -56,7 +66,7 @@ jobs:
           cd YMC-toolkit_Package
           zip -r ../YMC-toolkit-Windows.zip .
 
-      - name: Upload artifact (always)
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: YMC-toolkit-Windows
@@ -70,7 +80,6 @@ jobs:
           tag_name: ${{ github.ref_name }}
           body: |
             ## YMC-toolkit ${{ github.ref_name }}
-            
             自动构建的 Windows 可执行文件。
             下载后解压，运行 `YMC-toolkit.exe` 即可。
           files: YMC-toolkit-Windows.zip
