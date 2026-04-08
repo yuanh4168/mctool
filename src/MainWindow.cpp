@@ -36,7 +36,7 @@ bool MainWindow::Create(HINSTANCE hInst, HICON hIcon) {
     wc.hIconSm = hIcon;
     RegisterClassExW(&wc);
 
-    m_hWnd = CreateWindowExW(0, L"MainHiddenClass", L"MCTool", WS_OVERLAPPEDWINDOW,
+    m_hWnd = CreateWindowExW(0, L"MainHiddenClass", L"YMC-toolkit", WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 400, 300, NULL, NULL, hInst, this);
     if (!m_hWnd) return false;
 

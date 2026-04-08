@@ -14,7 +14,7 @@ static LRESULT CALLBACK HiddenWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
             g_nid.uID = 1;
             g_nid.uFlags = NIF_INFO;
             g_nid.dwInfoFlags = NIIF_INFO | NIIF_NOSOUND;
-            wcscpy_s(g_nid.szInfoTitle, L"MCTool 提醒");
+            wcscpy_s(g_nid.szInfoTitle, L"YMC-toolkit 提醒");
             Shell_NotifyIconW(NIM_ADD, &g_nid);
             break;
         case WM_USER_SHOW_BALLOON: {

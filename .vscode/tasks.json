@@ -2,14 +2,14 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "build MCTool",
+            "label": "build YMC-toolkit",
             "type": "shell",
             "command": "g++",
             "args": [
                 "-Wall", "-Wextra", "-g3",
-                "-I", "d:/table/mctool/include",
-                "d:/table/mctool/src/*.cpp",      // 编译所有源文件
-                "-o", "d:/table/mctool/bin/MCTool.exe",
+                "-I", "d:/table/YMC-toolkit/include",
+                "d:/table/YMC-toolkit/src/*.cpp",      // 编译所有源文件
+                "-o", "d:/table/YMC-toolkit/bin/YMC-toolkit.exe",
                 "-lws2_32", "-lgdiplus", "-lshell32"
             ],
             "group": {

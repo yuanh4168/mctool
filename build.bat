@@ -1,9 +1,9 @@
 @echo off
 cd /d %~dp0
-set RELEASE_DIR=..\MCTool_Build
+set RELEASE_DIR=..\YMCtoolkit_Build
 if not exist %RELEASE_DIR% mkdir %RELEASE_DIR%
 
-echo Building MCTool...
+echo Building YMCtoolkit...
 
 REM 编译资源文件
 windres resource.rc -O coff -o resource.res
@@ -14,7 +14,7 @@ if errorlevel 1 (
 )
 
 REM 编译主程序（明确指定 include 路径）
-g++ -std=c++17 -Wall -Wextra -g3 -Iinclude -I. src/*.cpp resource.res -o %RELEASE_DIR%\MCTool.exe -lws2_32 -lwininet -lgdi32 -lcomctl32 -lgdiplus -lcrypt32 -lole32 -lstdc++fs -mwindows
+g++ -std=c++17 -Wall -Wextra -g3 -Iinclude -I. src/*.cpp resource.res -o %RELEASE_DIR%\YMC-Toolkit.exe -lws2_32 -lwininet -lgdi32 -lcomctl32 -lgdiplus -lcrypt32 -lole32 -lstdc++fs -mwindows
 
 if errorlevel 1 (
     echo Build failed.

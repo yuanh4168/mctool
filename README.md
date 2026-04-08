@@ -2,9 +2,9 @@
 
 ---
 
-# MCTool – Minecraft 服务器状态监控与快捷启动工具
+# YMC-toolkit – Minecraft 服务器状态监控与快捷启动工具
 
-MCTool 是一个轻量级 Windows 桌面工具，专注于 **Minecraft 服务器状态监控**、**游戏快速启动** 以及 **开发辅助功能**。它将弹窗隐藏在屏幕顶部边缘，鼠标移入时滑出，显示服务器信息、快捷入口，并支持一键启动游戏。
+YMC-toolkit 是一个轻量级 Windows 桌面工具，专注于 **Minecraft 服务器状态监控**、**游戏快速启动** 以及 **开发辅助功能**。它将弹窗隐藏在屏幕顶部边缘，鼠标移入时滑出，显示服务器信息、快捷入口，并支持一键启动游戏。
 
 ## ✨ 主要功能
 
@@ -63,11 +63,11 @@ MCTool 是一个轻量级 Windows 桌面工具，专注于 **Minecraft 服务器
 
 ```batch
 @echo off
-set RELEASE_DIR=..\MCTool_Build
+set RELEASE_DIR=..\YMC-toolkit_Build
 if not exist %RELEASE_DIR% mkdir %RELEASE_DIR%
 
-echo Building MCTool...
-g++ -std=c++17 -Wall -Wextra -g3 -I./include src/*.cpp -o %RELEASE_DIR%\MCTool.exe -lws2_32 -lwininet -lgdi32 -lcomctl32 -lgdiplus -lcrypt32 -lole32 -lstdc++fs -lshell32 -mwindows
+echo Building YMC-toolkit...
+g++ -std=c++17 -Wall -Wextra -g3 -I./include src/*.cpp -o %RELEASE_DIR%\YMC-toolkit.exe -lws2_32 -lwininet -lgdi32 -lcomctl32 -lgdiplus -lcrypt32 -lole32 -lstdc++fs -lshell32 -mwindows
 if errorlevel 1 (
     echo Build failed.
     pause
@@ -83,12 +83,12 @@ echo Build completed. Output in %RELEASE_DIR%\
 pause
 ```
 
-直接双击运行即可生成 MCTool.exe 至上级目录的 MCTool_Build 文件夹中。  
+直接双击运行即可生成 YMC-toolkit.exe 至上级目录的 YMC-toolkit_Build 文件夹中。  
 如果未安装 MinGW 或需要调整，请修改脚本中的 g++ 路径。
 
 ### 运行
-1. 确保 `config.json`、`prompt_template.json` 与 `MCTool.exe` 在同一目录（若文件不存在程序会自动生成默认配置）。
-2. 运行 `MCTool.exe`（不会显示主窗口，只在后台检测鼠标位置）。
+1. 确保 `config.json`、`prompt_template.json` 与 `YMC-toolkit.exe` 在同一目录（若文件不存在程序会自动生成默认配置）。
+2. 运行 `YMC-toolkit.exe`（不会显示主窗口，只在后台检测鼠标位置）。
 3. 将鼠标移至屏幕顶部边缘，弹窗会自动滑出。
 4. 可拖动弹窗顶部的标题栏移动位置。
 5. 点击“统计”按钮可查看当前服务器的延迟折线图。
@@ -199,7 +199,7 @@ pause
 ## 📁 项目结构
 
 ```
-MCTool/
+YMC-toolkit/
 ├── src/                     # 源代码
 │   ├── Config.cpp/h
 │   ├── DPIHelper.h
