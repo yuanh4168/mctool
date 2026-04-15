@@ -128,19 +128,27 @@ void SettingsWindow::Show()
     RegisterClassExW(&wc);
 
     double scale = GetDPIScale();
-    int width = (int)(650 * scale);
-    int height = (int)(500 * scale);
+    int width = (int)(750 * scale);   // 加宽
+    int height = (int)(850 * scale);  // 加高以容纳所有控件
     int x = (GetSystemMetrics(SM_CXSCREEN) - width) / 2;
     int y = (GetSystemMetrics(SM_CYSCREEN) - height) / 2;
 
-    m_hDlg = CreateWindowExW(0, L"SettingsDialogClass", L"Settings",
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN,
+    std::wstring title = PopupWindow::UTF8ToWide("设置");
+    m_hDlg = CreateWindowExW(0, L"SettingsDialogClass", title.c_str(),
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_VSCROLL, // 添加垂直滚动条
         x, y, width, height,
         m_hParent, NULL, m_hInst, this);
     if (!m_hDlg) {
-        MessageBoxW(m_hParent, L"Failed to create settings window", L"Error", MB_ICONERROR);
+        MessageBoxW(m_hParent, L"创建设置窗口失败", L"错误", MB_ICONERROR);
         return;
     }
+
+    // 设置滚动条范围（根据内容总高度）
+    SCROLLINFO si = { sizeof(SCROLLINFO), SIF_RANGE | SIF_PAGE };
+    si.nMin = 0;
+    si.nMax = (int)(1200 * scale);  // 内容总高度（逻辑像素）
+    si.nPage = height;
+    SetScrollInfo(m_hDlg, SB_VERT, &si, TRUE);
 
     InitControls();
     LoadDataToUI();
@@ -151,28 +159,23 @@ void SettingsWindow::Show()
 
 void SettingsWindow::InitControls()
 {
-    // 初始化通用控件库（确保 Tab 控件正常工作）
-    INITCOMMONCONTROLSEX icex = { sizeof(INITCOMMONCONTROLSEX), ICC_TAB_CLASSES };
-    InitCommonControlsEx(&icex);
-
     double scale = GetDPIScale();
-    int margin = (int)(10 * scale);
-    int tabHeight = (int)(25 * scale);
-    int btnWidth = (int)(80 * scale);
-    int btnHeight = (int)(25 * scale);
-    int listWidth = (int)(400 * scale);
-    int listHeight = (int)(250 * scale);
+    int margin = (int)(15 * scale);
+    int groupHeight = (int)(25 * scale);
+    int btnWidth = (int)(100 * scale);
+    int btnHeight = (int)(28 * scale);
+    int labelW = (int)(120 * scale);
+    int editW = (int)(150 * scale);
+    int lineH = (int)(30 * scale);
+    int x = margin;
+    int y = margin;
 
-    RECT rcClient;
-    GetClientRect(m_hDlg, &rcClient);
-    int tabAreaTop = margin + tabHeight + margin;
-
-    // 创建支持中文的字体（必须在创建任何控件前创建）
+    // 创建支持中文的字体
     if (!m_hClearFont) {
         HDC hdc = GetDC(m_hDlg);
         int dpiX = GetDeviceCaps(hdc, LOGPIXELSX);
         ReleaseDC(m_hDlg, hdc);
-        int fontSize = -MulDiv(12, dpiX, 96);
+        int fontSize = -MulDiv(11, dpiX, 96);
         LOGFONTW lf = {};
         lf.lfHeight = fontSize;
         lf.lfWeight = FW_NORMAL;
@@ -181,293 +184,195 @@ void SettingsWindow::InitControls()
         m_hClearFont = CreateFontIndirectW(&lf);
     }
 
-    // 创建选项卡控件
-    m_hTabCtrl = CreateWindowW(WC_TABCONTROLW, NULL,
-        WS_CHILD | WS_VISIBLE | TCS_FIXEDWIDTH,
-        margin, margin, rcClient.right - 2 * margin, tabHeight,
-        m_hDlg, (HMENU)IDC_SETTINGS_TAB, m_hInst, NULL);
-    SendMessage(m_hTabCtrl, WM_SETFONT, (WPARAM)m_hClearFont, TRUE);
+    // ========== 服务器管理区域 ==========
+    CreateWindowW(L"BUTTON", L"服务器管理", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+        x, y, (int)(700 * scale), (int)(280 * scale), m_hDlg, NULL, m_hInst, NULL);
+    y += groupHeight + margin;
 
-    // 插入标签页（英文）
-    TCITEMW tie = {};
-    tie.mask = TCIF_TEXT;
-    std::wstring tabs[] = {L"Servers", L"Shortcuts", L"UI", L"Time", L"Reminder", L"Monitor", L"Game", L"Other"};
-    for (int i = 0; i < 8; ++i) {
-        tie.pszText = const_cast<wchar_t*>(tabs[i].c_str());
-        TabCtrl_InsertItem(m_hTabCtrl, i, &tie);
-    }
-
-    // ---------- 服务器选项卡 ----------
     m_hServerList = CreateWindowW(L"LISTBOX", NULL,
         WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | LBS_NOTIFY,
-        margin, tabAreaTop, listWidth, listHeight,
+        x + margin, y, (int)(400 * scale), (int)(200 * scale),
         m_hDlg, (HMENU)IDC_SERVER_LIST, m_hInst, NULL);
-    
-    int btnX = margin + listWidth + margin;
-    int btnY = tabAreaTop;
-    m_hAddServerBtn = CreateWindowW(L"BUTTON", L"Add", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+    int btnX = x + margin + (int)(400 * scale) + margin;
+    int btnY = y;
+    m_hAddServerBtn = CreateWindowW(L"BUTTON", L"添加", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         btnX, btnY, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_ADD_SERVER, m_hInst, NULL);
     btnY += btnHeight + margin;
-    m_hEditServerBtn = CreateWindowW(L"BUTTON", L"Edit", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+    m_hEditServerBtn = CreateWindowW(L"BUTTON", L"编辑", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         btnX, btnY, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_EDIT_SERVER, m_hInst, NULL);
     btnY += btnHeight + margin;
-    m_hDelServerBtn = CreateWindowW(L"BUTTON", L"Delete", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+    m_hDelServerBtn = CreateWindowW(L"BUTTON", L"删除", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         btnX, btnY, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_DEL_SERVER, m_hInst, NULL);
     btnY += btnHeight + margin;
-    m_hMoveUpBtn = CreateWindowW(L"BUTTON", L"Move Up", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+    m_hMoveUpBtn = CreateWindowW(L"BUTTON", L"上移", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         btnX, btnY, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_MOVE_UP_SERVER, m_hInst, NULL);
     btnY += btnHeight + margin;
-    m_hMoveDownBtn = CreateWindowW(L"BUTTON", L"Move Down", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+    m_hMoveDownBtn = CreateWindowW(L"BUTTON", L"下移", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         btnX, btnY, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_MOVE_DOWN_SERVER, m_hInst, NULL);
     btnY += btnHeight + margin;
-    m_hSetDefaultBtn = CreateWindowW(L"BUTTON", L"Set Default", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+    m_hSetDefaultBtn = CreateWindowW(L"BUTTON", L"设为默认", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         btnX, btnY, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_SET_DEFAULT_SERVER, m_hInst, NULL);
     btnY += btnHeight + margin;
-    m_hTestServerBtn = CreateWindowW(L"BUTTON", L"Test", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+    m_hTestServerBtn = CreateWindowW(L"BUTTON", L"测试连接", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         btnX, btnY, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_TEST_SERVER, m_hInst, NULL);
+    y += (int)(210 * scale) + margin;
 
-    // ---------- 快捷方式选项卡 ----------
+    // ========== 快捷方式管理区域 ==========
+    CreateWindowW(L"BUTTON", L"快捷方式管理", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+        x, y, (int)(700 * scale), (int)(160 * scale), m_hDlg, NULL, m_hInst, NULL);
+    y += groupHeight + margin;
+
     m_hShortcutList = CreateWindowW(L"LISTBOX", NULL,
-        WS_CHILD | WS_BORDER | WS_VSCROLL | LBS_NOTIFY,
-        margin, tabAreaTop, listWidth, listHeight,
+        WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | LBS_NOTIFY,
+        x + margin, y, (int)(400 * scale), (int)(100 * scale),
         m_hDlg, (HMENU)IDC_SHORTCUT_LIST, m_hInst, NULL);
-    btnX = margin + listWidth + margin;
-    btnY = tabAreaTop;
-    m_hAddShortcutBtn = CreateWindowW(L"BUTTON", L"Add", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+    btnX = x + margin + (int)(400 * scale) + margin;
+    btnY = y;
+    m_hAddShortcutBtn = CreateWindowW(L"BUTTON", L"添加", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         btnX, btnY, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_ADD_SHORTCUT, m_hInst, NULL);
     btnY += btnHeight + margin;
-    m_hEditShortcutBtn = CreateWindowW(L"BUTTON", L"Edit", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+    m_hEditShortcutBtn = CreateWindowW(L"BUTTON", L"编辑", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         btnX, btnY, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_EDIT_SHORTCUT, m_hInst, NULL);
     btnY += btnHeight + margin;
-    m_hDelShortcutBtn = CreateWindowW(L"BUTTON", L"Delete", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+    m_hDelShortcutBtn = CreateWindowW(L"BUTTON", L"删除", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         btnX, btnY, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_DEL_SHORTCUT, m_hInst, NULL);
+    y += (int)(110 * scale) + margin;
 
-    // ---------- 界面选项卡 ----------
-    int labelW = (int)(100 * scale);
-    int editW = (int)(100 * scale);
-    int lineH = (int)(25 * scale);
-    int yPos = tabAreaTop;
-    m_hStaticPopupWidth = CreateWindowW(L"STATIC", L"Popup Width:", WS_CHILD | WS_VISIBLE,
-        margin, yPos, labelW, lineH, m_hDlg, (HMENU)IDC_STATIC_POPUP_WIDTH, m_hInst, NULL);
+    // ========== 界面设置区域 ==========
+    CreateWindowW(L"BUTTON", L"界面设置", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+        x, y, (int)(700 * scale), (int)(130 * scale), m_hDlg, NULL, m_hInst, NULL);
+    y += groupHeight + margin;
+
+    CreateWindowW(L"STATIC", L"弹窗宽度:", WS_CHILD | WS_VISIBLE,
+        x + margin, y, labelW, lineH, m_hDlg, NULL, m_hInst, NULL);
     m_hPopupWidth = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER,
-        margin + labelW + margin, yPos, editW, lineH, m_hDlg, (HMENU)IDC_POPUP_WIDTH, m_hInst, NULL);
-    yPos += lineH + margin;
-    m_hStaticPopupHeight = CreateWindowW(L"STATIC", L"Popup Height:", WS_CHILD | WS_VISIBLE,
-        margin, yPos, labelW, lineH, m_hDlg, (HMENU)IDC_STATIC_POPUP_HEIGHT, m_hInst, NULL);
+        x + margin + labelW + margin, y, editW, lineH, m_hDlg, (HMENU)IDC_POPUP_WIDTH, m_hInst, NULL);
+    y += lineH + margin;
+    CreateWindowW(L"STATIC", L"弹窗高度:", WS_CHILD | WS_VISIBLE,
+        x + margin, y, labelW, lineH, m_hDlg, NULL, m_hInst, NULL);
     m_hPopupHeight = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER,
-        margin + labelW + margin, yPos, editW, lineH, m_hDlg, (HMENU)IDC_POPUP_HEIGHT, m_hInst, NULL);
-    yPos += lineH + margin;
-    m_hStaticEdgeThreshold = CreateWindowW(L"STATIC", L"Edge Threshold(px):", WS_CHILD | WS_VISIBLE,
-        margin, yPos, labelW, lineH, m_hDlg, (HMENU)IDC_STATIC_EDGE_THRESHOLD, m_hInst, NULL);
+        x + margin + labelW + margin, y, editW, lineH, m_hDlg, (HMENU)IDC_POPUP_HEIGHT, m_hInst, NULL);
+    y += lineH + margin;
+    CreateWindowW(L"STATIC", L"边缘阈值(px):", WS_CHILD | WS_VISIBLE,
+        x + margin, y, labelW, lineH, m_hDlg, NULL, m_hInst, NULL);
     m_hEdgeThreshold = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER,
-        margin + labelW + margin, yPos, editW, lineH, m_hDlg, (HMENU)IDC_EDGE_THRESHOLD, m_hInst, NULL);
+        x + margin + labelW + margin, y, editW, lineH, m_hDlg, (HMENU)IDC_EDGE_THRESHOLD, m_hInst, NULL);
+    y += lineH + margin;
 
-    // ---------- 时间选项卡 ----------
-    yPos = tabAreaTop;
-    m_hTimeEnabled = CreateWindowW(L"BUTTON", L"Enable Time Display", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        margin, yPos, (int)(150 * scale), lineH, m_hDlg, (HMENU)IDC_TIME_ENABLED, m_hInst, NULL);
-    yPos += lineH + margin;
-    m_hStaticTimeFormat = CreateWindowW(L"STATIC", L"Time Format:", WS_CHILD | WS_VISIBLE,
-        margin, yPos, labelW, lineH, m_hDlg, (HMENU)IDC_STATIC_TIME_FORMAT, m_hInst, NULL);
+    // ========== 时间显示区域 ==========
+    CreateWindowW(L"BUTTON", L"时间显示", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+        x, y, (int)(700 * scale), (int)(100 * scale), m_hDlg, NULL, m_hInst, NULL);
+    y += groupHeight + margin;
+
+    m_hTimeEnabled = CreateWindowW(L"BUTTON", L"启用时间显示", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        x + margin, y, (int)(150 * scale), lineH, m_hDlg, (HMENU)IDC_TIME_ENABLED, m_hInst, NULL);
+    y += lineH + margin;
+    CreateWindowW(L"STATIC", L"时间格式:", WS_CHILD | WS_VISIBLE,
+        x + margin, y, labelW, lineH, m_hDlg, NULL, m_hInst, NULL);
     m_hTimeFormat = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | CBS_HASSTRINGS,
-        margin + labelW + margin, yPos, editW, lineH * 5, m_hDlg, (HMENU)IDC_TIME_FORMAT, m_hInst, NULL);
+        x + margin + labelW + margin, y, editW, lineH * 5, m_hDlg, (HMENU)IDC_TIME_FORMAT, m_hInst, NULL);
     SendMessageW(m_hTimeFormat, CB_ADDSTRING, 0, (LPARAM)L"HH:mm:ss");
     SendMessageW(m_hTimeFormat, CB_ADDSTRING, 0, (LPARAM)L"HH:mm");
+    y += lineH + margin;
 
-    // ---------- 休息提醒选项卡 ----------
-    yPos = tabAreaTop;
-    m_hReminderEnabled = CreateWindowW(L"BUTTON", L"Enable Reminder", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        margin, yPos, (int)(150 * scale), lineH, m_hDlg, (HMENU)IDC_REMINDER_ENABLED, m_hInst, NULL);
-    yPos += lineH + margin;
-    m_hStaticReminderInterval = CreateWindowW(L"STATIC", L"Interval(min):", WS_CHILD | WS_VISIBLE,
-        margin, yPos, labelW, lineH, m_hDlg, (HMENU)IDC_STATIC_REMINDER_INTERVAL, m_hInst, NULL);
+    // ========== 休息提醒区域 ==========
+    CreateWindowW(L"BUTTON", L"休息提醒", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+        x, y, (int)(700 * scale), (int)(160 * scale), m_hDlg, NULL, m_hInst, NULL);
+    y += groupHeight + margin;
+
+    m_hReminderEnabled = CreateWindowW(L"BUTTON", L"启用休息提醒", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        x + margin, y, (int)(150 * scale), lineH, m_hDlg, (HMENU)IDC_REMINDER_ENABLED, m_hInst, NULL);
+    y += lineH + margin;
+    CreateWindowW(L"STATIC", L"间隔(分钟):", WS_CHILD | WS_VISIBLE,
+        x + margin, y, labelW, lineH, m_hDlg, NULL, m_hInst, NULL);
     m_hReminderInterval = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER,
-        margin + labelW + margin, yPos, editW, lineH, m_hDlg, (HMENU)IDC_REMINDER_INTERVAL, m_hInst, NULL);
-    yPos += lineH + margin;
-    m_hStaticReminderMessage = CreateWindowW(L"STATIC", L"Message:", WS_CHILD | WS_VISIBLE,
-        margin, yPos, labelW, lineH, m_hDlg, (HMENU)IDC_STATIC_REMINDER_MESSAGE, m_hInst, NULL);
+        x + margin + labelW + margin, y, editW, lineH, m_hDlg, (HMENU)IDC_REMINDER_INTERVAL, m_hInst, NULL);
+    y += lineH + margin;
+    CreateWindowW(L"STATIC", L"提醒消息:", WS_CHILD | WS_VISIBLE,
+        x + margin, y, labelW, lineH, m_hDlg, NULL, m_hInst, NULL);
     m_hReminderMessage = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER,
-        margin + labelW + margin, yPos, (int)(300 * scale), lineH, m_hDlg, (HMENU)IDC_REMINDER_MESSAGE, m_hInst, NULL);
-    yPos += lineH + margin;
-    m_hTestReminderBtn = CreateWindowW(L"BUTTON", L"Test", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        margin, yPos, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_TEST_REMINDER, m_hInst, NULL);
+        x + margin + labelW + margin, y, (int)(300 * scale), lineH, m_hDlg, (HMENU)IDC_REMINDER_MESSAGE, m_hInst, NULL);
+    y += lineH + margin;
+    m_hTestReminderBtn = CreateWindowW(L"BUTTON", L"测试提醒", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        x + margin, y, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_TEST_REMINDER, m_hInst, NULL);
+    y += btnHeight + margin;
 
-    // ---------- 监控选项卡 ----------
-    yPos = tabAreaTop;
-    m_hMonitorEnabled = CreateWindowW(L"BUTTON", L"Enable Background Monitor", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        margin, yPos, (int)(150 * scale), lineH, m_hDlg, (HMENU)IDC_MONITOR_ENABLED, m_hInst, NULL);
-    yPos += lineH + margin;
-    m_hStaticMonitorInterval = CreateWindowW(L"STATIC", L"Interval(sec):", WS_CHILD | WS_VISIBLE,
-        margin, yPos, labelW, lineH, m_hDlg, (HMENU)IDC_STATIC_MONITOR_INTERVAL, m_hInst, NULL);
+    // ========== 后台监控区域 ==========
+    CreateWindowW(L"BUTTON", L"后台监控", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+        x, y, (int)(700 * scale), (int)(160 * scale), m_hDlg, NULL, m_hInst, NULL);
+    y += groupHeight + margin;
+
+    m_hMonitorEnabled = CreateWindowW(L"BUTTON", L"启用后台监控", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        x + margin, y, (int)(150 * scale), lineH, m_hDlg, (HMENU)IDC_MONITOR_ENABLED, m_hInst, NULL);
+    y += lineH + margin;
+    CreateWindowW(L"STATIC", L"间隔(秒):", WS_CHILD | WS_VISIBLE,
+        x + margin, y, labelW, lineH, m_hDlg, NULL, m_hInst, NULL);
     m_hMonitorInterval = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER,
-        margin + labelW + margin, yPos, editW, lineH, m_hDlg, (HMENU)IDC_MONITOR_INTERVAL, m_hInst, NULL);
-    yPos += lineH + margin;
-    m_hStaticMonitorMaxPoints = CreateWindowW(L"STATIC", L"Max Data Points:", WS_CHILD | WS_VISIBLE,
-        margin, yPos, labelW, lineH, m_hDlg, (HMENU)IDC_STATIC_MONITOR_MAXPOINTS, m_hInst, NULL);
+        x + margin + labelW + margin, y, editW, lineH, m_hDlg, (HMENU)IDC_MONITOR_INTERVAL, m_hInst, NULL);
+    y += lineH + margin;
+    CreateWindowW(L"STATIC", L"最大数据点:", WS_CHILD | WS_VISIBLE,
+        x + margin, y, labelW, lineH, m_hDlg, NULL, m_hInst, NULL);
     m_hMonitorMaxPoints = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER,
-        margin + labelW + margin, yPos, editW, lineH, m_hDlg, (HMENU)IDC_MONITOR_MAXPOINTS, m_hInst, NULL);
-    yPos += lineH + margin;
-    m_hClearHistoryBtn = CreateWindowW(L"BUTTON", L"Clear History", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        margin, yPos, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_CLEAR_HISTORY, m_hInst, NULL);
+        x + margin + labelW + margin, y, editW, lineH, m_hDlg, (HMENU)IDC_MONITOR_MAXPOINTS, m_hInst, NULL);
+    y += lineH + margin;
+    m_hClearHistoryBtn = CreateWindowW(L"BUTTON", L"清除历史数据", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        x + margin, y, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_CLEAR_HISTORY, m_hInst, NULL);
+    y += btnHeight + margin;
 
-    // ---------- 游戏选项卡 ----------
-    yPos = tabAreaTop;
-    m_hStaticGameCommand = CreateWindowW(L"STATIC", L"Launch Command:", WS_CHILD | WS_VISIBLE,
-        margin, yPos, labelW, lineH, m_hDlg, (HMENU)IDC_STATIC_GAME_COMMAND, m_hInst, NULL);
+    // ========== 游戏启动区域 ==========
+    CreateWindowW(L"BUTTON", L"游戏启动", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+        x, y, (int)(700 * scale), (int)(100 * scale), m_hDlg, NULL, m_hInst, NULL);
+    y += groupHeight + margin;
+
+    CreateWindowW(L"STATIC", L"启动命令:", WS_CHILD | WS_VISIBLE,
+        x + margin, y, labelW, lineH, m_hDlg, NULL, m_hInst, NULL);
     m_hGameCommand = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER,
-        margin + labelW + margin, yPos, (int)(300 * scale), lineH, m_hDlg, (HMENU)IDC_GAME_COMMAND, m_hInst, NULL);
-    m_hBrowseGameBtn = CreateWindowW(L"BUTTON", L"Browse...", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        margin + labelW + margin + (int)(300 * scale) + margin, yPos, btnWidth, btnHeight,
+        x + margin + labelW + margin, y, (int)(300 * scale), lineH, m_hDlg, (HMENU)IDC_GAME_COMMAND, m_hInst, NULL);
+    m_hBrowseGameBtn = CreateWindowW(L"BUTTON", L"浏览...", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        x + margin + labelW + margin + (int)(300 * scale) + margin, y, btnWidth, btnHeight,
         m_hDlg, (HMENU)IDC_BROWSE_GAME, m_hInst, NULL);
+    y += lineH + margin;
 
-    // ---------- 其他选项卡 ----------
-    yPos = tabAreaTop;
-    m_hStartupEnabled = CreateWindowW(L"BUTTON", L"Run on Startup", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        margin, yPos, (int)(150 * scale), lineH, m_hDlg, (HMENU)IDC_STARTUP_ENABLED, m_hInst, NULL);
-    yPos += lineH + margin;
-    m_hResetConfigBtn = CreateWindowW(L"BUTTON", L"Reset Config", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        margin, yPos, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_RESET_CONFIG, m_hInst, NULL);
-    yPos += btnHeight + margin;
-    m_hBackupConfigBtn = CreateWindowW(L"BUTTON", L"Backup Config", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        margin, yPos, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_BACKUP_CONFIG, m_hInst, NULL);
-    yPos += btnHeight + margin;
-    m_hRestoreConfigBtn = CreateWindowW(L"BUTTON", L"Restore Config", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        margin, yPos, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_RESTORE_CONFIG, m_hInst, NULL);
-    yPos += btnHeight + margin;
-    m_hAboutText = CreateWindowW(L"STATIC", L"YMC-toolkit v1.0\nA Minecraft server status monitor",
+    // ========== 其他设置区域 ==========
+    CreateWindowW(L"BUTTON", L"其他", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+        x, y, (int)(700 * scale), (int)(160 * scale), m_hDlg, NULL, m_hInst, NULL);
+    y += groupHeight + margin;
+
+    m_hStartupEnabled = CreateWindowW(L"BUTTON", L"开机启动", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        x + margin, y, (int)(150 * scale), lineH, m_hDlg, (HMENU)IDC_STARTUP_ENABLED, m_hInst, NULL);
+    y += lineH + margin;
+    m_hResetConfigBtn = CreateWindowW(L"BUTTON", L"重置配置", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        x + margin, y, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_RESET_CONFIG, m_hInst, NULL);
+    y += btnHeight + margin;
+    m_hBackupConfigBtn = CreateWindowW(L"BUTTON", L"备份配置", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        x + margin, y, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_BACKUP_CONFIG, m_hInst, NULL);
+    y += btnHeight + margin;
+    m_hRestoreConfigBtn = CreateWindowW(L"BUTTON", L"恢复配置", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        x + margin, y, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_RESTORE_CONFIG, m_hInst, NULL);
+    y += btnHeight + margin;
+    m_hAboutText = CreateWindowW(L"STATIC", L"YMC-toolkit v1.0\n一个 Minecraft 服务器状态监控工具",
         WS_CHILD | WS_VISIBLE,
-        margin, yPos, (int)(400 * scale), (int)(60 * scale), m_hDlg, (HMENU)IDC_ABOUT_TEXT, m_hInst, NULL);
+        x + margin, y, (int)(400 * scale), (int)(50 * scale), m_hDlg, (HMENU)IDC_ABOUT_TEXT, m_hInst, NULL);
+    y += (int)(60 * scale);
 
-    // 为所有子控件设置字体（解决中文乱码）
+    // 为所有子控件设置字体
     EnumChildWindows(m_hDlg, [](HWND hWnd, LPARAM lParam) -> BOOL {
         SendMessage(hWnd, WM_SETFONT, (WPARAM)lParam, TRUE);
         return TRUE;
     }, (LPARAM)m_hClearFont);
 
-    // 强制刷新 Tab 控件
-    if (m_hTabCtrl) {
-        InvalidateRect(m_hTabCtrl, NULL, TRUE);
-        UpdateWindow(m_hTabCtrl);
-    }
-
-    // 默认显示服务器选项卡
-    ShowTab(TAB_SERVER);
+    // 记录内容总高度，用于滚动
+    int totalHeight = y + margin;
+    SCROLLINFO si = { sizeof(SCROLLINFO), SIF_RANGE | SIF_PAGE };
+    si.nMin = 0;
+    si.nMax = totalHeight;
+    RECT rc;
+    GetClientRect(m_hDlg, &rc);
+    si.nPage = rc.bottom - rc.top;
+    SetScrollInfo(m_hDlg, SB_VERT, &si, TRUE);
 }
 
-void SettingsWindow::ShowTab(int tab)
-{
-    // 隐藏所有可能出现在不同选项卡中的控件
-    // 服务器选项卡
-    ShowWindow(m_hServerList, SW_HIDE);
-    ShowWindow(m_hAddServerBtn, SW_HIDE);
-    ShowWindow(m_hEditServerBtn, SW_HIDE);
-    ShowWindow(m_hDelServerBtn, SW_HIDE);
-    ShowWindow(m_hMoveUpBtn, SW_HIDE);
-    ShowWindow(m_hMoveDownBtn, SW_HIDE);
-    ShowWindow(m_hSetDefaultBtn, SW_HIDE);
-    ShowWindow(m_hTestServerBtn, SW_HIDE);
-    // 快捷方式选项卡
-    ShowWindow(m_hShortcutList, SW_HIDE);
-    ShowWindow(m_hAddShortcutBtn, SW_HIDE);
-    ShowWindow(m_hEditShortcutBtn, SW_HIDE);
-    ShowWindow(m_hDelShortcutBtn, SW_HIDE);
-    // 界面选项卡
-    ShowWindow(m_hStaticPopupWidth, SW_HIDE);
-    ShowWindow(m_hPopupWidth, SW_HIDE);
-    ShowWindow(m_hStaticPopupHeight, SW_HIDE);
-    ShowWindow(m_hPopupHeight, SW_HIDE);
-    ShowWindow(m_hStaticEdgeThreshold, SW_HIDE);
-    ShowWindow(m_hEdgeThreshold, SW_HIDE);
-    // 时间选项卡
-    ShowWindow(m_hTimeEnabled, SW_HIDE);
-    ShowWindow(m_hStaticTimeFormat, SW_HIDE);
-    ShowWindow(m_hTimeFormat, SW_HIDE);
-    // 休息提醒选项卡
-    ShowWindow(m_hReminderEnabled, SW_HIDE);
-    ShowWindow(m_hStaticReminderInterval, SW_HIDE);
-    ShowWindow(m_hReminderInterval, SW_HIDE);
-    ShowWindow(m_hStaticReminderMessage, SW_HIDE);
-    ShowWindow(m_hReminderMessage, SW_HIDE);
-    ShowWindow(m_hTestReminderBtn, SW_HIDE);
-    // 监控选项卡
-    ShowWindow(m_hMonitorEnabled, SW_HIDE);
-    ShowWindow(m_hStaticMonitorInterval, SW_HIDE);
-    ShowWindow(m_hMonitorInterval, SW_HIDE);
-    ShowWindow(m_hStaticMonitorMaxPoints, SW_HIDE);
-    ShowWindow(m_hMonitorMaxPoints, SW_HIDE);
-    ShowWindow(m_hClearHistoryBtn, SW_HIDE);
-    // 游戏选项卡
-    ShowWindow(m_hStaticGameCommand, SW_HIDE);
-    ShowWindow(m_hGameCommand, SW_HIDE);
-    ShowWindow(m_hBrowseGameBtn, SW_HIDE);
-    // 其他选项卡
-    ShowWindow(m_hStartupEnabled, SW_HIDE);
-    ShowWindow(m_hResetConfigBtn, SW_HIDE);
-    ShowWindow(m_hBackupConfigBtn, SW_HIDE);
-    ShowWindow(m_hRestoreConfigBtn, SW_HIDE);
-    ShowWindow(m_hAboutText, SW_HIDE);
 
-    // 根据选中的选项卡显示对应的控件
-    switch (tab) {
-        case TAB_SERVER:
-            ShowWindow(m_hServerList, SW_SHOW);
-            ShowWindow(m_hAddServerBtn, SW_SHOW);
-            ShowWindow(m_hEditServerBtn, SW_SHOW);
-            ShowWindow(m_hDelServerBtn, SW_SHOW);
-            ShowWindow(m_hMoveUpBtn, SW_SHOW);
-            ShowWindow(m_hMoveDownBtn, SW_SHOW);
-            ShowWindow(m_hSetDefaultBtn, SW_SHOW);
-            ShowWindow(m_hTestServerBtn, SW_SHOW);
-            break;
-        case TAB_SHORTCUT:
-            ShowWindow(m_hShortcutList, SW_SHOW);
-            ShowWindow(m_hAddShortcutBtn, SW_SHOW);
-            ShowWindow(m_hEditShortcutBtn, SW_SHOW);
-            ShowWindow(m_hDelShortcutBtn, SW_SHOW);
-            break;
-        case TAB_UI:
-            ShowWindow(m_hStaticPopupWidth, SW_SHOW);
-            ShowWindow(m_hPopupWidth, SW_SHOW);
-            ShowWindow(m_hStaticPopupHeight, SW_SHOW);
-            ShowWindow(m_hPopupHeight, SW_SHOW);
-            ShowWindow(m_hStaticEdgeThreshold, SW_SHOW);
-            ShowWindow(m_hEdgeThreshold, SW_SHOW);
-            break;
-        case TAB_TIME:
-            ShowWindow(m_hTimeEnabled, SW_SHOW);
-            ShowWindow(m_hStaticTimeFormat, SW_SHOW);
-            ShowWindow(m_hTimeFormat, SW_SHOW);
-            break;
-        case TAB_REMINDER:
-            ShowWindow(m_hReminderEnabled, SW_SHOW);
-            ShowWindow(m_hStaticReminderInterval, SW_SHOW);
-            ShowWindow(m_hReminderInterval, SW_SHOW);
-            ShowWindow(m_hStaticReminderMessage, SW_SHOW);
-            ShowWindow(m_hReminderMessage, SW_SHOW);
-            ShowWindow(m_hTestReminderBtn, SW_SHOW);
-            break;
-        case TAB_MONITOR:
-            ShowWindow(m_hMonitorEnabled, SW_SHOW);
-            ShowWindow(m_hStaticMonitorInterval, SW_SHOW);
-            ShowWindow(m_hMonitorInterval, SW_SHOW);
-            ShowWindow(m_hStaticMonitorMaxPoints, SW_SHOW);
-            ShowWindow(m_hMonitorMaxPoints, SW_SHOW);
-            ShowWindow(m_hClearHistoryBtn, SW_SHOW);
-            break;
-        case TAB_GAME:
-            ShowWindow(m_hStaticGameCommand, SW_SHOW);
-            ShowWindow(m_hGameCommand, SW_SHOW);
-            ShowWindow(m_hBrowseGameBtn, SW_SHOW);
-            break;
-        case TAB_OTHER:
-            ShowWindow(m_hStartupEnabled, SW_SHOW);
-            ShowWindow(m_hResetConfigBtn, SW_SHOW);
-            ShowWindow(m_hBackupConfigBtn, SW_SHOW);
-            ShowWindow(m_hRestoreConfigBtn, SW_SHOW);
-            ShowWindow(m_hAboutText, SW_SHOW);
-            break;
-    }
-}
 
 void SettingsWindow::LoadDataToUI()
 {
@@ -572,7 +477,7 @@ void SettingsWindow::AddServer()
 {
     std::string host = "localhost";
     std::string port = "25565";
-    if (ShowInputDialog(m_hDlg, "Add Server", host, port)) {
+    if (ShowInputDialog(m_hDlg, "添加服务器", host, port)) {
         if (!host.empty()) {
             ServerInfo sv;
             sv.host = host;
@@ -590,7 +495,7 @@ void SettingsWindow::EditServer()
     ServerInfo& sv = m_config.servers[sel];
     std::string host = sv.host;
     std::string port = std::to_string(sv.port);
-    if (ShowInputDialog(m_hDlg, "Edit Server", host, port)) {
+    if (ShowInputDialog(m_hDlg, "编辑服务器", host, port)) {
         sv.host = host;
         sv.port = std::stoi(port);
         UpdateServerListUI();
@@ -650,21 +555,21 @@ void SettingsWindow::TestServer()
     ServerStatus status;
     if (PingServer(sv.host, sv.port, status)) {
         wchar_t msg[1024];
-        swprintf(msg, 1024, L"Online\nPlayers: %d/%d\nVersion: %s\nLatency: %d ms",
+        swprintf(msg, 1024, L"在线\n玩家: %d/%d\n版本: %s\n延迟: %d ms",
             status.players, status.maxPlayers,
             PopupWindow::UTF8ToWide(status.version).c_str(),
             status.latency);
-        MessageBoxW(m_hDlg, msg, L"Test Result", MB_OK);
+        MessageBoxW(m_hDlg, msg, L"测试结果", MB_OK);
     } else {
-        MessageBoxW(m_hDlg, L"Offline or unreachable", L"Test Result", MB_OK);
+        MessageBoxW(m_hDlg, L"离线或无法连接", L"测试结果", MB_OK);
     }
 }
 
 void SettingsWindow::AddShortcut()
 {
-    std::string name = "New Shortcut";
+    std::string name = "新快捷方式";
     std::string url = "https://";
-    if (ShowInputDialog(m_hDlg, "Add Shortcut", name, url)) {
+    if (ShowInputDialog(m_hDlg, "添加快捷方式", name, url)) {
         if (!name.empty() && !url.empty()) {
             Shortcut sc;
             sc.name = name;
@@ -682,7 +587,7 @@ void SettingsWindow::EditShortcut()
     Shortcut& sc = m_config.shortcuts[sel];
     std::string name = sc.name;
     std::string url = sc.url;
-    if (ShowInputDialog(m_hDlg, "Edit Shortcut", name, url)) {
+    if (ShowInputDialog(m_hDlg, "编辑快捷方式", name, url)) {
         sc.name = name;
         sc.url = url;
         UpdateShortcutListUI();
@@ -704,7 +609,7 @@ void SettingsWindow::BrowseGameCommand()
     wchar_t fileName[MAX_PATH] = {0};
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = m_hDlg;
-    ofn.lpstrFilter = L"Executable Files\0*.exe\0All Files\0*.*\0";
+    ofn.lpstrFilter = L"可执行文件\0*.exe\0所有文件\0*.*\0";
     ofn.lpstrFile = fileName;
     ofn.nMaxFile = MAX_PATH;
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
@@ -722,12 +627,12 @@ void SettingsWindow::TestReminder()
 void SettingsWindow::ClearHistory()
 {
     PostMessage(m_hParent, WM_CLEAR_HISTORY, 0, 0);
-    MessageBoxW(m_hDlg, L"History cleared", L"Info", MB_OK);
+    MessageBoxW(m_hDlg, L"历史数据已清除", L"提示", MB_OK);
 }
 
 void SettingsWindow::ResetConfig()
 {
-    if (MessageBoxW(m_hDlg, L"Reset all settings to default? Current settings will be lost.", L"Confirm", MB_YESNO) == IDYES) {
+    if (MessageBoxW(m_hDlg, L"重置所有配置到默认值？当前配置将丢失。", L"确认", MB_YESNO) == IDYES) {
         m_config = Config::FromJson(nlohmann::json::object());
         m_config.Save(m_configPath);
         LoadDataToUI();
@@ -741,9 +646,9 @@ void SettingsWindow::BackupConfig()
     GetModuleFileNameW(NULL, backupPath, MAX_PATH);
     wcscat_s(backupPath, L".backup.json");
     if (CopyFileW(PopupWindow::UTF8ToWide(m_configPath).c_str(), backupPath, FALSE)) {
-        MessageBoxW(m_hDlg, L"Backup successful", L"Info", MB_OK);
+        MessageBoxW(m_hDlg, L"备份成功", L"提示", MB_OK);
     } else {
-        MessageBoxW(m_hDlg, L"Backup failed", L"Error", MB_ICONERROR);
+        MessageBoxW(m_hDlg, L"备份失败", L"错误", MB_ICONERROR);
     }
 }
 
@@ -756,9 +661,9 @@ void SettingsWindow::RestoreConfig()
         m_config.Load(m_configPath);
         LoadDataToUI();
         PostMessage(m_hParent, WM_CONFIG_UPDATED, 0, 0);
-        MessageBoxW(m_hDlg, L"Restore successful", L"Info", MB_OK);
+        MessageBoxW(m_hDlg, L"恢复成功", L"提示", MB_OK);
     } else {
-        MessageBoxW(m_hDlg, L"Backup file not found", L"Error", MB_ICONERROR);
+        MessageBoxW(m_hDlg, L"未找到备份文件", L"错误", MB_ICONERROR);
     }
 }
 
@@ -815,11 +720,40 @@ LRESULT CALLBACK SettingsWindow::DlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPA
                     break;
             }
             return 0;
-        case WM_NOTIFY: {
-            NMHDR* pnmh = (NMHDR*)lParam;
-            if (pnmh->hwndFrom == pThis->m_hTabCtrl && pnmh->code == TCN_SELCHANGE) {
-                int sel = TabCtrl_GetCurSel(pThis->m_hTabCtrl);
-                pThis->ShowTab(sel);
+        case WM_VSCROLL: {
+            // 处理垂直滚动
+            int pos = GetScrollPos(hWnd, SB_VERT);
+            int newPos = pos;
+            switch (LOWORD(wParam)) {
+                case SB_LINEUP:      newPos -= 20; break;
+                case SB_LINEDOWN:    newPos += 20; break;
+                case SB_PAGEUP:      newPos -= (int)(GetSystemMetrics(SM_CYSCREEN) * 0.8); break;
+                case SB_PAGEDOWN:    newPos += (int)(GetSystemMetrics(SM_CYSCREEN) * 0.8); break;
+                case SB_THUMBTRACK:  newPos = HIWORD(wParam); break;
+            }
+            SCROLLINFO si = { sizeof(SCROLLINFO), SIF_POS };
+            GetScrollInfo(hWnd, SB_VERT, &si);
+            if (newPos < si.nMin) newPos = si.nMin;
+            if (newPos > si.nMax - (int)si.nPage) newPos = si.nMax - si.nPage;
+            if (newPos != pos) {
+                SetScrollPos(hWnd, SB_VERT, newPos, TRUE);
+                ScrollWindow(hWnd, 0, pos - newPos, NULL, NULL);
+                UpdateWindow(hWnd);
+            }
+            return 0;
+        }
+        case WM_MOUSEWHEEL: {
+            int delta = GET_WHEEL_DELTA_WPARAM(wParam);
+            int pos = GetScrollPos(hWnd, SB_VERT);
+            int newPos = pos - delta / 2;  // 每滚轮刻度移动约 15 像素
+            SCROLLINFO si = { sizeof(SCROLLINFO), SIF_POS | SIF_RANGE | SIF_PAGE };
+            GetScrollInfo(hWnd, SB_VERT, &si);
+            if (newPos < si.nMin) newPos = si.nMin;
+            if (newPos > si.nMax - (int)si.nPage) newPos = si.nMax - si.nPage;
+            if (newPos != pos) {
+                SetScrollPos(hWnd, SB_VERT, newPos, TRUE);
+                ScrollWindow(hWnd, 0, pos - newPos, NULL, NULL);
+                UpdateWindow(hWnd);
             }
             return 0;
         }

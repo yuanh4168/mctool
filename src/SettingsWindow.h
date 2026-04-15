@@ -66,7 +66,7 @@ private:
 
     static LRESULT CALLBACK DlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
     void InitControls();
-    void ShowTab(int tab);
+    
     void LoadDataToUI();
     void SaveUItoConfig();
     void UpdateServerListUI();
