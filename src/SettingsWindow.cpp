@@ -1,3 +1,4 @@
+// SettingsWindow.cpp
 #include "SettingsWindow.h"
 #include "DPIHelper.h"
 #include "PopupWindow.h"
@@ -18,7 +19,6 @@
 #define WM_CONFIG_UPDATED (WM_USER + 300)
 #define WM_CLEAR_HISTORY  (WM_USER + 500)
 
-// 替代 Button_SetCheck 和 Button_GetCheck 宏
 #ifndef Button_SetCheck
 #define Button_SetCheck(hwnd, check) SendMessage(hwnd, BM_SETCHECK, (check) ? BST_CHECKED : BST_UNCHECKED, 0)
 #endif
@@ -26,44 +26,160 @@
 #define Button_GetCheck(hwnd) (int)SendMessage(hwnd, BM_GETCHECK, 0, 0)
 #endif
 
-// 简单的输入对话框函数
-static INT_PTR CALLBACK InputDialogProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-    static std::pair<std::string, std::string>* pData = nullptr;
+// 自定义输入对话框数据
+struct InputDialogData {
+    std::string title;
+    std::string label1;
+    std::string label2;
+    std::string value1;
+    std::string value2;
+    bool confirmed;
+    HWND hDlg;
+    HFONT hFont;
+};
+
+// 输入对话框过程
+static LRESULT CALLBACK InputDialogWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    InputDialogData* pData = nullptr;
+    if (msg == WM_NCCREATE) {
+        pData = (InputDialogData*)((CREATESTRUCT*)lParam)->lpCreateParams;
+        SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)pData);
+        pData->hDlg = hWnd;
+        return TRUE;
+    }
+    pData = (InputDialogData*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
+    if (!pData) return DefWindowProc(hWnd, msg, wParam, lParam);
+
     switch (msg) {
-        case WM_INITDIALOG:
-            pData = (std::pair<std::string, std::string>*)lParam;
-            SetWindowTextW(GetDlgItem(hDlg, 1001), L"名称/地址");
-            SetWindowTextW(GetDlgItem(hDlg, 1002), L"值/端口");
-            if (pData) {
-                SetWindowTextW(GetDlgItem(hDlg, 1001), PopupWindow::UTF8ToWide(pData->first).c_str());
-                SetWindowTextW(GetDlgItem(hDlg, 1002), PopupWindow::UTF8ToWide(pData->second).c_str());
+        case WM_CREATE: {
+            double scale = GetDPIScale();
+            int xMargin = (int)(15 * scale);
+            int yMargin = (int)(15 * scale);
+            int labelW = (int)(80 * scale);
+            int editW = (int)(200 * scale);
+            int btnW = (int)(80 * scale);
+            int rowH = (int)(28 * scale);
+            int y = yMargin;
+
+            HDC hdc = GetDC(hWnd);
+            int dpiX = GetDeviceCaps(hdc, LOGPIXELSX);
+            ReleaseDC(hWnd, hdc);
+            int fontSize = -MulDiv(11, dpiX, 96);
+            LOGFONTW lf = {0};
+            lf.lfHeight = fontSize;
+            lf.lfWeight = FW_NORMAL;
+            lf.lfQuality = CLEARTYPE_QUALITY;
+            wcscpy_s(lf.lfFaceName, L"Microsoft YaHei");
+            pData->hFont = CreateFontIndirectW(&lf);
+
+            // 标签1
+            CreateWindowW(L"STATIC", PopupWindow::UTF8ToWide(pData->label1).c_str(),
+                WS_CHILD | WS_VISIBLE, xMargin, y, labelW, rowH, hWnd, NULL, GetModuleHandle(NULL), NULL);
+            // 编辑框1
+            HWND hEdit1 = CreateWindowW(L"EDIT", PopupWindow::UTF8ToWide(pData->value1).c_str(),
+                WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
+                xMargin + labelW + xMargin, y, editW, rowH, hWnd, (HMENU)101, GetModuleHandle(NULL), NULL);
+            y += rowH + yMargin;
+
+            // 标签2
+            CreateWindowW(L"STATIC", PopupWindow::UTF8ToWide(pData->label2).c_str(),
+                WS_CHILD | WS_VISIBLE, xMargin, y, labelW, rowH, hWnd, NULL, GetModuleHandle(NULL), NULL);
+            // 编辑框2
+            HWND hEdit2 = CreateWindowW(L"EDIT", PopupWindow::UTF8ToWide(pData->value2).c_str(),
+                WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
+                xMargin + labelW + xMargin, y, editW, rowH, hWnd, (HMENU)102, GetModuleHandle(NULL), NULL);
+            y += rowH + yMargin * 2;
+
+            // 确定按钮
+            CreateWindowW(L"BUTTON", L"确定", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+                xMargin + labelW + xMargin + editW - btnW * 2 - xMargin, y, btnW, rowH,
+                hWnd, (HMENU)IDOK, GetModuleHandle(NULL), NULL);
+            // 取消按钮
+            CreateWindowW(L"BUTTON", L"取消", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+                xMargin + labelW + xMargin + editW - btnW, y, btnW, rowH,
+                hWnd, (HMENU)IDCANCEL, GetModuleHandle(NULL), NULL);
+
+            // 设置字体
+            for (HWND hChild = GetWindow(hWnd, GW_CHILD); hChild; hChild = GetWindow(hChild, GW_HWNDNEXT)) {
+                SendMessage(hChild, WM_SETFONT, (WPARAM)pData->hFont, TRUE);
             }
-            return TRUE;
+
+            // 设置焦点
+            SetFocus(hEdit1);
+            return 0;
+        }
         case WM_COMMAND:
             if (LOWORD(wParam) == IDOK) {
                 wchar_t buf1[256] = {0}, buf2[256] = {0};
-                GetDlgItemTextW(hDlg, 1001, buf1, 256);
-                GetDlgItemTextW(hDlg, 1002, buf2, 256);
-                if (pData) {
-                    pData->first = PopupWindow::WideToUTF8(buf1);
-                    pData->second = PopupWindow::WideToUTF8(buf2);
-                }
-                EndDialog(hDlg, IDOK);
+                GetDlgItemTextW(hWnd, 101, buf1, 256);
+                GetDlgItemTextW(hWnd, 102, buf2, 256);
+                pData->value1 = PopupWindow::WideToUTF8(buf1);
+                pData->value2 = PopupWindow::WideToUTF8(buf2);
+                pData->confirmed = true;
+                DestroyWindow(hWnd);
             } else if (LOWORD(wParam) == IDCANCEL) {
-                EndDialog(hDlg, IDCANCEL);
+                pData->confirmed = false;
+                DestroyWindow(hWnd);
             }
-            return TRUE;
+            return 0;
+        case WM_CLOSE:
+            pData->confirmed = false;
+            DestroyWindow(hWnd);
+            return 0;
+        case WM_DESTROY:
+            if (pData->hFont) DeleteObject(pData->hFont);
+            break;
     }
-    return FALSE;
+    return DefWindowProc(hWnd, msg, wParam, lParam);
 }
 
-static bool ShowInputDialog(HWND hParent, const std::string& /*title*/, std::string& value1, std::string& value2)
+static bool ShowInputDialog(HWND hParent, const std::string& title,
+                            const std::string& label1, const std::string& label2,
+                            std::string& value1, std::string& value2)
 {
-    std::pair<std::string, std::string> data = {value1, value2};
-    if (DialogBoxParamW(GetModuleHandle(NULL), MAKEINTRESOURCEW(1000), hParent, InputDialogProc, (LPARAM)&data) == IDOK) {
-        value1 = data.first;
-        value2 = data.second;
+    HINSTANCE hInst = GetModuleHandle(NULL);
+    double scale = GetDPIScale();
+    int width = (int)(350 * scale);
+    int height = (int)(150 * scale);
+
+    // 注册窗口类
+    WNDCLASSEXW wc = {};
+    wc.cbSize = sizeof(WNDCLASSEXW);
+    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.lpfnWndProc = InputDialogWndProc;
+    wc.hInstance = hInst;
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wc.lpszClassName = L"InputDialogClass";
+    RegisterClassExW(&wc);
+
+    InputDialogData data;
+    data.title = title;
+    data.label1 = label1;
+    data.label2 = label2;
+    data.value1 = value1;
+    data.value2 = value2;
+    data.confirmed = false;
+    data.hFont = NULL;
+
+    HWND hDlg = CreateWindowExW(0, L"InputDialogClass", PopupWindow::UTF8ToWide(title).c_str(),
+        WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
+        (GetSystemMetrics(SM_CXSCREEN) - width) / 2,
+        (GetSystemMetrics(SM_CYSCREEN) - height) / 2,
+        width, height,
+        hParent, NULL, hInst, &data);
+    if (!hDlg) return false;
+
+    // 消息循环（模态）
+    MSG msg;
+    while (IsWindow(hDlg) && GetMessage(&msg, NULL, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+
+    if (data.confirmed) {
+        value1 = data.value1;
+        value2 = data.value2;
         return true;
     }
     return false;
@@ -73,7 +189,6 @@ SettingsWindow::SettingsWindow(HINSTANCE hInst, Config& cfg, HWND hParent)
     : m_config(cfg), m_hDlg(NULL), m_hInst(hInst), m_hParent(hParent), m_selectedTab(0),
       m_hClearFont(NULL)
 {
-    // 初始化所有控件句柄为 NULL
     m_hServerList = m_hAddServerBtn = m_hEditServerBtn = m_hDelServerBtn = NULL;
     m_hMoveUpBtn = m_hMoveDownBtn = m_hSetDefaultBtn = m_hTestServerBtn = NULL;
     m_hShortcutList = m_hAddShortcutBtn = m_hEditShortcutBtn = m_hDelShortcutBtn = NULL;
@@ -84,11 +199,6 @@ SettingsWindow::SettingsWindow(HINSTANCE hInst, Config& cfg, HWND hParent)
     m_hGameCommand = m_hBrowseGameBtn = NULL;
     m_hStartupEnabled = m_hResetConfigBtn = m_hBackupConfigBtn = m_hRestoreConfigBtn = m_hAboutText = NULL;
     m_hTabCtrl = NULL;
-    m_hStaticPopupWidth = m_hStaticPopupHeight = m_hStaticEdgeThreshold = NULL;
-    m_hStaticTimeFormat = NULL;
-    m_hStaticReminderInterval = m_hStaticReminderMessage = NULL;
-    m_hStaticMonitorInterval = m_hStaticMonitorMaxPoints = NULL;
-    m_hStaticGameCommand = NULL;
 }
 
 SettingsWindow::~SettingsWindow()
@@ -105,7 +215,6 @@ void SettingsWindow::Show()
         return;
     }
 
-    // 获取配置文件绝对路径
     wchar_t modulePath[MAX_PATH];
     GetModuleFileNameW(NULL, modulePath, MAX_PATH);
     std::wstring ws(modulePath);
@@ -113,10 +222,8 @@ void SettingsWindow::Show()
     size_t pos = exePath.find_last_of("\\");
     m_configPath = exePath.substr(0, pos + 1) + "config.json";
 
-    // 重新加载最新配置
     m_config.Load(m_configPath);
 
-    // 注册窗口类
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(WNDCLASSEXW);
     wc.style = CS_HREDRAW | CS_VREDRAW;
@@ -128,14 +235,14 @@ void SettingsWindow::Show()
     RegisterClassExW(&wc);
 
     double scale = GetDPIScale();
-    int width = (int)(750 * scale);   // 加宽
-    int height = (int)(850 * scale);  // 加高以容纳所有控件
+    int width = (int)(750 * scale);
+    int height = (int)(850 * scale);
     int x = (GetSystemMetrics(SM_CXSCREEN) - width) / 2;
     int y = (GetSystemMetrics(SM_CYSCREEN) - height) / 2;
 
     std::wstring title = PopupWindow::UTF8ToWide("设置");
     m_hDlg = CreateWindowExW(0, L"SettingsDialogClass", title.c_str(),
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_VSCROLL, // 添加垂直滚动条
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_VSCROLL,
         x, y, width, height,
         m_hParent, NULL, m_hInst, this);
     if (!m_hDlg) {
@@ -143,10 +250,9 @@ void SettingsWindow::Show()
         return;
     }
 
-    // 设置滚动条范围（根据内容总高度）
     SCROLLINFO si = { sizeof(SCROLLINFO), SIF_RANGE | SIF_PAGE };
     si.nMin = 0;
-    si.nMax = (int)(1200 * scale);  // 内容总高度（逻辑像素）
+    si.nMax = (int)(1200 * scale);
     si.nPage = height;
     SetScrollInfo(m_hDlg, SB_VERT, &si, TRUE);
 
@@ -161,17 +267,16 @@ void SettingsWindow::InitControls()
 {
     double scale = GetDPIScale();
     int margin = (int)(15 * scale);
-    int groupMargin = (int)(20 * scale);  // 组之间的间距
+    int groupMargin = (int)(20 * scale);
     int groupHeight = (int)(25 * scale);
     int btnWidth = (int)(100 * scale);
     int btnHeight = (int)(28 * scale);
     int labelW = (int)(120 * scale);
     int editW = (int)(150 * scale);
-    int lineH = (int)(32 * scale);       // 行高增加
+    int lineH = (int)(32 * scale);
     int x = margin;
     int y = margin;
 
-    // 创建支持中文的字体
     if (!m_hClearFont) {
         HDC hdc = GetDC(m_hDlg);
         int dpiX = GetDeviceCaps(hdc, LOGPIXELSX);
@@ -185,7 +290,7 @@ void SettingsWindow::InitControls()
         m_hClearFont = CreateFontIndirectW(&lf);
     }
 
-    // ========== 服务器管理区域 ==========
+    // 服务器管理区域
     CreateWindowW(L"BUTTON", L"服务器管理", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
         x, y, (int)(700 * scale), (int)(350 * scale), m_hDlg, NULL, m_hInst, NULL);
     y += groupHeight + margin;
@@ -218,7 +323,7 @@ void SettingsWindow::InitControls()
         btnX, btnY, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_TEST_SERVER, m_hInst, NULL);
     y += (int)(280 * scale) + groupMargin;
 
-    // ========== 快捷方式管理区域 ==========
+    // 快捷方式管理区域
     CreateWindowW(L"BUTTON", L"快捷方式管理", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
         x, y, (int)(700 * scale), (int)(200 * scale), m_hDlg, NULL, m_hInst, NULL);
     y += groupHeight + margin;
@@ -239,7 +344,7 @@ void SettingsWindow::InitControls()
         btnX, btnY, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_DEL_SHORTCUT, m_hInst, NULL);
     y += (int)(130 * scale) + groupMargin;
 
-    // ========== 界面设置区域 ==========
+    // 界面设置
     CreateWindowW(L"BUTTON", L"界面设置", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
         x, y, (int)(700 * scale), (int)(160 * scale), m_hDlg, NULL, m_hInst, NULL);
     y += groupHeight + margin;
@@ -260,7 +365,7 @@ void SettingsWindow::InitControls()
         x + margin + labelW + margin, y, editW, lineH, m_hDlg, (HMENU)IDC_EDGE_THRESHOLD, m_hInst, NULL);
     y += lineH + groupMargin;
 
-    // ========== 时间显示区域 ==========
+    // 时间显示
     CreateWindowW(L"BUTTON", L"时间显示", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
         x, y, (int)(700 * scale), (int)(130 * scale), m_hDlg, NULL, m_hInst, NULL);
     y += groupHeight + margin;
@@ -276,7 +381,7 @@ void SettingsWindow::InitControls()
     SendMessageW(m_hTimeFormat, CB_ADDSTRING, 0, (LPARAM)L"HH:mm");
     y += lineH + groupMargin;
 
-    // ========== 休息提醒区域 ==========
+    // 休息提醒
     CreateWindowW(L"BUTTON", L"休息提醒", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
         x, y, (int)(700 * scale), (int)(200 * scale), m_hDlg, NULL, m_hInst, NULL);
     y += groupHeight + margin;
@@ -298,7 +403,7 @@ void SettingsWindow::InitControls()
         x + margin, y, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_TEST_REMINDER, m_hInst, NULL);
     y += btnHeight + groupMargin;
 
-    // ========== 后台监控区域 ==========
+    // 后台监控
     CreateWindowW(L"BUTTON", L"后台监控", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
         x, y, (int)(700 * scale), (int)(200 * scale), m_hDlg, NULL, m_hInst, NULL);
     y += groupHeight + margin;
@@ -320,7 +425,7 @@ void SettingsWindow::InitControls()
         x + margin, y, btnWidth, btnHeight, m_hDlg, (HMENU)IDC_CLEAR_HISTORY, m_hInst, NULL);
     y += btnHeight + groupMargin;
 
-    // ========== 游戏启动区域 ==========
+    // 游戏启动
     CreateWindowW(L"BUTTON", L"游戏启动", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
         x, y, (int)(700 * scale), (int)(130 * scale), m_hDlg, NULL, m_hInst, NULL);
     y += groupHeight + margin;
@@ -334,7 +439,7 @@ void SettingsWindow::InitControls()
         m_hDlg, (HMENU)IDC_BROWSE_GAME, m_hInst, NULL);
     y += lineH + groupMargin;
 
-    // ========== 其他设置区域 ==========
+    // 其他设置
     CreateWindowW(L"BUTTON", L"其他", WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
         x, y, (int)(700 * scale), (int)(200 * scale), m_hDlg, NULL, m_hInst, NULL);
     y += groupHeight + margin;
@@ -356,13 +461,11 @@ void SettingsWindow::InitControls()
         x + margin, y, (int)(400 * scale), (int)(60 * scale), m_hDlg, (HMENU)IDC_ABOUT_TEXT, m_hInst, NULL);
     y += (int)(70 * scale);
 
-    // 为所有子控件设置字体
     EnumChildWindows(m_hDlg, [](HWND hWnd, LPARAM lParam) -> BOOL {
         SendMessage(hWnd, WM_SETFONT, (WPARAM)lParam, TRUE);
         return TRUE;
     }, (LPARAM)m_hClearFont);
 
-    // 记录内容总高度，用于滚动
     int totalHeight = y + margin;
     SCROLLINFO si = { sizeof(SCROLLINFO), SIF_RANGE | SIF_PAGE };
     si.nMin = 0;
@@ -372,8 +475,6 @@ void SettingsWindow::InitControls()
     si.nPage = rc.bottom - rc.top;
     SetScrollInfo(m_hDlg, SB_VERT, &si, TRUE);
 }
-
-
 
 void SettingsWindow::LoadDataToUI()
 {
@@ -405,7 +506,6 @@ void SettingsWindow::LoadDataToUI()
 
     SetWindowTextW(m_hGameCommand, PopupWindow::UTF8ToWide(m_config.gameCommand).c_str());
 
-    // 检查开机启动状态（读取注册表）
     HKEY hKey;
     bool startup = false;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
@@ -478,7 +578,7 @@ void SettingsWindow::AddServer()
 {
     std::string host = "localhost";
     std::string port = "25565";
-    if (ShowInputDialog(m_hDlg, "添加服务器", host, port)) {
+    if (ShowInputDialog(m_hDlg, "添加服务器", "主机名/IP", "端口", host, port)) {
         if (!host.empty()) {
             ServerInfo sv;
             sv.host = host;
@@ -496,7 +596,7 @@ void SettingsWindow::EditServer()
     ServerInfo& sv = m_config.servers[sel];
     std::string host = sv.host;
     std::string port = std::to_string(sv.port);
-    if (ShowInputDialog(m_hDlg, "编辑服务器", host, port)) {
+    if (ShowInputDialog(m_hDlg, "编辑服务器", "主机名/IP", "端口", host, port)) {
         sv.host = host;
         sv.port = std::stoi(port);
         UpdateServerListUI();
@@ -570,7 +670,7 @@ void SettingsWindow::AddShortcut()
 {
     std::string name = "新快捷方式";
     std::string url = "https://";
-    if (ShowInputDialog(m_hDlg, "添加快捷方式", name, url)) {
+    if (ShowInputDialog(m_hDlg, "添加快捷方式", "名称", "URL", name, url)) {
         if (!name.empty() && !url.empty()) {
             Shortcut sc;
             sc.name = name;
@@ -588,7 +688,7 @@ void SettingsWindow::EditShortcut()
     Shortcut& sc = m_config.shortcuts[sel];
     std::string name = sc.name;
     std::string url = sc.url;
-    if (ShowInputDialog(m_hDlg, "编辑快捷方式", name, url)) {
+    if (ShowInputDialog(m_hDlg, "编辑快捷方式", "名称", "URL", name, url)) {
         sc.name = name;
         sc.url = url;
         UpdateShortcutListUI();
@@ -722,7 +822,6 @@ LRESULT CALLBACK SettingsWindow::DlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPA
             }
             return 0;
         case WM_VSCROLL: {
-            // 处理垂直滚动
             int pos = GetScrollPos(hWnd, SB_VERT);
             int newPos = pos;
             switch (LOWORD(wParam)) {
@@ -746,7 +845,7 @@ LRESULT CALLBACK SettingsWindow::DlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPA
         case WM_MOUSEWHEEL: {
             int delta = GET_WHEEL_DELTA_WPARAM(wParam);
             int pos = GetScrollPos(hWnd, SB_VERT);
-            int newPos = pos - delta / 2;  // 每滚轮刻度移动约 15 像素
+            int newPos = pos - delta / 2;
             SCROLLINFO si = { sizeof(SCROLLINFO), SIF_POS | SIF_RANGE | SIF_PAGE };
             GetScrollInfo(hWnd, SB_VERT, &si);
             if (newPos < si.nMin) newPos = si.nMin;
